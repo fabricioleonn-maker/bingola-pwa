@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Bingola</string>
+    <string name="title_activity_main">Bingola</string>
+    <string name="package_name">com.bingola.app</string>
+    <string name="custom_url_scheme">com.bingola.app</string>
+</resources>

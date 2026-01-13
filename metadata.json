@@ -1,0 +1,8 @@
+
+{
+  "name": "Bingola - Bingo Social",
+  "description": "Um aplicativo de bingo social premium para jogar com amigos e família, com customização de cartelas, sorteios ao vivo, rankings globais e uma economia virtual de BCOINS.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
