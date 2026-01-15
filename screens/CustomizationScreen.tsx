@@ -26,10 +26,10 @@ export const CustomizationScreen: React.FC<Props> = ({ onBack }) => {
   ];
 
   const themes = [
-    { id: 'classic', name: 'Original', desc: 'Design moderno e limpo', img: 'https://images.unsplash.com/photo-1483736762161-1d107f3c78e1?q=80&w=300&auto=format&fit=crop' },
-    { id: 'retro', name: 'Retrô Cassino', desc: 'O clássico inesquecível', img: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?q=80&w=300&auto=format&fit=crop' },
-    { id: 'neon', name: 'Vegas Neon', desc: 'Alta voltagem e brilho', img: 'https://images.unsplash.com/photo-1595113316349-9fa4ee24f884?q=80&w=300&auto=format&fit=crop' },
-    { id: 'minimal', name: 'Minimalista', desc: 'Foco nos números', img: 'https://images.unsplash.com/photo-1518133839073-42716b066fe8?q=80&w=300&auto=format&fit=crop' }
+    { id: 'classic', name: 'Original', desc: 'Design moderno e limpo', img: 'https://images.unsplash.com/photo-1516321497487-e288fb19713f?q=80&w=300&auto=format&fit=crop' },
+    { id: 'retro', name: 'Retrô Cassino', desc: 'O clássico inesquecível', img: '/themes/retro.jpg' },
+    { id: 'neon', name: 'Vegas Neon', desc: 'Alta voltagem e brilho', img: '/themes/vegas.jpg' },
+    { id: 'minimal', name: 'Minimalista', desc: 'Foco nos números', img: 'https://images.unsplash.com/photo-1595769816263-9b910be24d5f?q=80&w=300&auto=format&fit=crop' }
   ];
 
   useEffect(() => {
@@ -54,8 +54,8 @@ export const CustomizationScreen: React.FC<Props> = ({ onBack }) => {
     switch (selectedTheme) {
       case 'retro': return { cardBg: 'bg-[#f0e6d2]', cellBg: 'bg-white', textColor: 'text-[#4a3a2a]', border: 'border-[#d6ccb8]' };
       case 'neon': return { cardBg: 'bg-[#0a0a0a]', cellBg: 'bg-[#1a1a1a]', textColor: 'text-white/90', border: 'border-primary/20' };
-      case 'minimal': return { cardBg: 'bg-white', cellBg: 'bg-gray-50', textColor: 'text-zinc-800', border: 'border-gray-100' };
-      default: return { cardBg: 'bg-surface-dark', cellBg: 'bg-white/5', textColor: 'text-white', border: 'border-white/10' };
+      case 'minimal': return { cardBg: 'bg-white shadow-2xl', cellBg: 'bg-transparent', textColor: 'text-zinc-900', border: 'border-transparent' };
+      default: return { cardBg: 'bg-gray-50', cellBg: 'bg-white', textColor: 'text-zinc-800', border: 'border-gray-200' };
     }
   };
 
@@ -96,7 +96,7 @@ export const CustomizationScreen: React.FC<Props> = ({ onBack }) => {
               {['B', 'I', 'N', 'G', 'O'].map(l => <span key={l} className="text-white font-black text-xl">{l}</span>)}
             </div>
             <div className="flex-1 grid grid-cols-5 gap-1.5 mt-2">
-              {[4, 21, 35, 52, 68, 7, 0, 44, 49, 63, 12, 19, 0, 58, 71, 3, 25, 33, 55, 66, 15, 22, 40, 50, 75].map((cell, i) => (
+              {[4, 21, 35, 52, 68, 7, 28, 44, 49, 63, 12, 19, 0, 58, 71, 3, 25, 33, 55, 66, 15, 22, 40, 50, 75].map((cell, i) => (
                 <div key={i} className={`aspect-square flex items-center justify-center rounded-xl font-black text-base relative border transition-all ${cell === 0 ? 'bg-primary/20 border-primary/40' : `${preview.cellBg} ${preview.border} ${preview.textColor}`}`}>
                   {cell === 0 ? (
                     <div className="flex flex-col items-center leading-none">

@@ -11,9 +11,8 @@ interface HomeProps {
 export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
   const [userName, setUserName] = useState('Explorador');
   const [balance, setBalance] = useState(0);
-  const [hasActiveRoom, setHasActiveRoom] = useState(false);
-  const [isGameRunning, setIsGameRunning] = useState(false);
-  const [lastDrawn, setLastDrawn] = useState<number | null>(null);
+  // State derived from Store (removed local state for these)
+  const hasActiveRoom = !!useRoomStore((s) => s.roomId);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   // Room state (single source of truth)
@@ -24,6 +23,7 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [isJoining, setIsJoining] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const getBingoLabel = (num: number): string => {
     if (num <= 0) return "";
@@ -68,23 +68,14 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
 
     fetchProfile();
 
-    const checkState = () => {
-      const running = localStorage.getItem('bingola_game_running') === 'true';
-      const drawn = JSON.parse(localStorage.getItem('bingola_drawn_numbers') || '[]');
-
-      setHasActiveRoom(!!roomId);
-      setIsGameRunning(running);
-      if (drawn.length > 0) {
-        setLastDrawn(drawn[drawn.length - 1]);
-      } else {
-        setLastDrawn(null);
-      }
-    };
-
-    checkState();
-    const interval = setInterval(checkState, 1500);
-    return () => clearInterval(interval);
+    // State sync removed - relying on Store directly
   }, [roomId]);
+
+  // Derive HUD state from Store
+  const isGameRunning = !!roomId && room?.status === 'playing';
+  const lastDrawn = isGameRunning && room?.drawn_numbers && room.drawn_numbers.length > 0
+    ? room.drawn_numbers[room.drawn_numbers.length - 1]
+    : null;
 
   const handleForceExit = async () => {
     if (window.confirm("Deseja forçar a saída da mesa atual?")) {
@@ -113,15 +104,16 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
   };
 
   const handleJoinByCode = async () => {
+    setErrorMsg(null);
     if (joinCode.length < 4) {
-      alert('O código deve ter pelo menos 4 dígitos.');
+      setErrorMsg('O código deve ter pelo menos 4 dígitos.');
       return;
     }
     setIsJoining(true);
     try {
       const { data: roomData, error: roomError } = await supabase
         .from('rooms')
-        .select('id, status, name')
+        .select('id, status, name, player_limit')
         .eq('code', joinCode)
         .neq('status', 'finished')
         .order('created_at', { ascending: false })
@@ -129,14 +121,44 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
         .maybeSingle();
 
       if (roomError || !roomData) {
-        alert('Sala não encontrada ou já encerrada.');
+        setErrorMsg('Sala não encontrada ou já encerrada.');
+        return;
+      }
+
+      // 1a. Full Room Check
+      const { count: acceptedCount } = await supabase
+        .from('participants')
+        .select('id', { count: 'exact', head: true })
+        .eq('room_id', roomData.id)
+        .eq('status', 'accepted');
+
+      const limit = roomData.player_limit || 20;
+      // Host occupies 1 spot, so we check if (accepted + 1) >= limit
+      if (acceptedCount !== null && (acceptedCount + 1) >= limit) {
+        setErrorMsg("Mesa já está cheia, entre em contato com o anfitrião");
         return;
       }
 
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Sessão expirada. Faça login novamente.');
 
-      // 1. Manually clear state before joining to avoid conflicts
+      // 1b. Ban Check (Unified)
+      const { data: banData } = await supabase
+        .from('room_bans')
+        .select('rejection_count')
+        .eq('room_id', roomData.id)
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (banData && banData.rejection_count >= 2) {
+        setErrorMsg("Você foi banido permanentemente desta mesa.");
+        return;
+      }
+
+      // 1c. Simple Rejection check REMOVED to allow retry (2-strike rule)
+      // The user can try again until they reach 2 rejections (handled by banData check above)
+
+      // 1d. Logic to clear previous states
       useRoomStore.getState().setRoomId(null);
       const keysToRemove = [
         'bingola_game_running',
@@ -162,11 +184,9 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
       useRoomStore.getState().setRoomId(roomData.id);
       onNavigate('participant_lobby');
     } catch (err: any) {
-      alert('Erro ao entrar na sala: ' + (err.message || 'Erro desconhecido'));
+      setErrorMsg(err.message || 'Erro ao entrar na sala.');
     } finally {
       setIsJoining(false);
-      setShowJoinModal(false);
-      setJoinCode('');
     }
   };
 
@@ -210,25 +230,59 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
         )}
 
         <div className="grid grid-cols-1 gap-4">
+          {/* 1. Return to Active Room Card */}
+          {hasActiveRoom && (
+            <button
+              onClick={() => isGameRunning ? onNavigate('game') : onNavigate(isHost ? 'lobby' : 'participant_lobby')}
+              className="flex flex-col items-center justify-center h-48 bg-gradient-to-br from-primary to-pink-600 rounded-3xl shadow-xl relative overflow-hidden group active:scale-95 transition-all w-full animate-in zoom-in-50 duration-300"
+            >
+              <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-20"></div>
+              <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 blur-3xl -mr-16 -mt-16"></div>
+
+              <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center mb-4 ring-4 ring-white/10">
+                <span className="material-symbols-outlined text-white text-4xl animate-pulse">
+                  {isGameRunning ? 'play_circle' : 'meeting_room'}
+                </span>
+              </div>
+              <span className="text-white font-black text-2xl uppercase tracking-tight italic">
+                {isGameRunning ? 'Voltar ao Jogo' : 'Abrir Lobby'}
+              </span>
+              <span className="text-white/80 text-[10px] uppercase font-bold tracking-widest mt-2 bg-black/20 px-3 py-1 rounded-full">
+                {isGameRunning ? 'Partida em Andamento' : 'Sua mesa está ativa'}
+              </span>
+            </button>
+          )}
+
+          {/* 2. Create New Room (Blocked if active) */}
           <button
             onClick={() => {
-              if (isGameRunning) return onNavigate('game');
-              if (hasActiveRoom) return onNavigate(isHost ? 'lobby' : 'participant_lobby');
-              return onNavigate('host_dashboard');
+              if (hasActiveRoom) {
+                alert("Você já está em uma mesa ativa! Saia dela primeiro ou clique em 'Abrir Lobby'.");
+                return;
+              }
+              onNavigate('host_dashboard');
             }}
-            className={`flex flex-col items-center justify-center h-48 rounded-3xl shadow-xl relative overflow-hidden group active:scale-95 transition-all ${isGameRunning || hasActiveRoom ? 'bg-secondary' : 'bg-primary'}`}
+            className={`flex flex-col items-center justify-center h-48 rounded-3xl shadow-xl relative overflow-hidden group active:scale-95 transition-all ${hasActiveRoom ? 'bg-white/5 border border-white/5 opacity-50 grayscale cursor-not-allowed' : 'bg-surface-dark border border-white/10'}`}
           >
-            <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent"></div>
-            <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center mb-4">
-              <span className="material-symbols-outlined text-white text-3xl">{isGameRunning ? 'play_circle' : (hasActiveRoom ? 'meeting_room' : 'add')}</span>
+            <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4">
+              <span className="material-symbols-outlined text-white text-3xl">add</span>
             </div>
-            <span className="text-white font-bold text-lg">{isGameRunning ? 'Ver Jogo' : (hasActiveRoom ? 'Lobby da Mesa' : 'Criar Nova Sala')}</span>
-            <span className="text-white/60 text-[10px] uppercase font-black tracking-widest mt-1">
-              {isGameRunning ? 'Partida ativa' : (hasActiveRoom ? 'Sua mesa aberta' : 'Sorteio em grupo')}
-            </span>
+            <span className="text-white font-bold text-lg">Criar Nova Sala</span>
+            <span className="text-white/60 text-[10px] uppercase font-black tracking-widest mt-1">Sorteio em grupo</span>
           </button>
 
-          <button onClick={() => setShowJoinModal(true)} className="flex flex-col items-center justify-center h-48 bg-surface-dark border border-white/10 rounded-3xl group active:scale-95 transition-transform">
+          {/* 3. Join Room (Blocked if active) */}
+          <button
+            onClick={() => {
+              if (hasActiveRoom) {
+                alert("Você já está em uma mesa ativa! Saia dela primeiro ou clique em 'Abrir Lobby'.");
+                return;
+              }
+              setErrorMsg(null);
+              setShowJoinModal(true);
+            }}
+            className={`flex flex-col items-center justify-center h-48 rounded-3xl group active:scale-95 transition-transform ${hasActiveRoom ? 'bg-white/5 border border-white/5 opacity-50 grayscale cursor-not-allowed' : 'bg-surface-dark border border-white/10'}`}
+          >
             <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4">
               <span className="material-symbols-outlined text-primary text-3xl">keyboard</span>
             </div>
@@ -255,6 +309,12 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
                 className="w-full h-20 bg-white/5 border border-white/10 rounded-2xl text-center text-4xl font-black tracking-[0.5em] text-primary focus:border-primary/50 focus:ring-0 transition-all mb-8 placeholder:opacity-10"
                 autoFocus
               />
+
+              {errorMsg && (
+                <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 mb-6 animate-pulse">
+                  <p className="text-red-500 text-[10px] font-bold uppercase tracking-widest text-center">{errorMsg}</p>
+                </div>
+              )}
 
               <div className="flex flex-col gap-3">
                 <button

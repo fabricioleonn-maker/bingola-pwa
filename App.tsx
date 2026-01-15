@@ -23,7 +23,9 @@ import { AppScreen } from './types';
 import { useRoomStore } from './state/roomStore';
 import { useRoomSession } from './state/useRoomSession';
 import { readPersistedRoomId, canAutoResume, setNoResume, clearBingolaLocalState } from './state/persist';
+import { NotificationToast } from './components/NotificationToast';
 
+import { PersistentGameLoop } from './components/PersistentGameLoop';
 
 const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>('splash');
@@ -107,6 +109,7 @@ const App: React.FC = () => {
           .maybeSingle();
 
         if (!currentRoom || currentRoom.status === 'finished') {
+          console.log("App Watchdog: Room finished or not found. Clearing state.");
           clearBingolaLocalState();
           setRoomId(null);
           setCurrentScreen('home');
@@ -143,24 +146,29 @@ const App: React.FC = () => {
 
         setRoomId(hosted.id);
         if (hosted.status === 'playing') {
-          if (currentScreen !== 'game') setCurrentScreen('game');
+          const allowedInGame = ['game', 'customization', 'audio_settings', 'home', 'store', 'profile', 'ranking', 'messages'];
+          if (!allowedInGame.includes(currentScreen)) setCurrentScreen('game');
         } else {
-          const lobbyScreens: AppScreen[] = ['lobby', 'game', 'host_dashboard', 'room_settings', 'audio_settings', 'rules_settings', 'customization'];
+          // Allow 'home' so host can minimize the lobby
+          const lobbyScreens: AppScreen[] = ['lobby', 'game', 'host_dashboard', 'room_settings', 'audio_settings', 'rules_settings', 'customization', 'home', 'ranking', 'store', 'profile', 'messages'];
           if (!lobbyScreens.includes(currentScreen)) setCurrentScreen('lobby');
         }
         return;
       }
 
+      console.log("App Watchdog: Check", { screen: currentScreen });
       // Participant check
       const { data: part } = await supabase
         .from('participants')
         .select('room_id, status, rooms!inner(status)')
         .eq('user_id', session.user.id)
-        .in('status', ['pending', 'accepted'])
+        .in('status', ['pending', 'accepted', 'rejected'])
         .neq('rooms.status', 'finished')
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
+
+      console.log("App Watchdog: Part result:", part);
 
       if (part?.room_id) {
         if (cancelled) return;
@@ -169,23 +177,39 @@ const App: React.FC = () => {
 
         setRoomId(part.room_id);
         const rSt = (part as any).rooms?.status;
+
+        // NEW: Handle Rejection Globally
+        if (part.status === 'rejected') {
+          console.log("App Watchdog: User is REJECTED. Forcing Lobby.");
+          // Ensure we are in the room context (setRoomId) but on the correct screen
+          if (roomId !== part.room_id) setRoomId(part.room_id);
+          if (currentScreen !== 'participant_lobby') setCurrentScreen('participant_lobby');
+          return;
+        }
+
         if (rSt === 'playing') {
-          // Fix: Only allowed players go to game
+          // STRICT SECURITY CHECK: Only accepted players can be in game
           if (part.status === 'accepted') {
-            if (currentScreen !== 'game') setCurrentScreen('game');
+            // Allow 'customization' and 'audio_settings' so we don't force loop back to game
+            // Allow 'customization', 'audio_settings', and main tabs so users can leave temporarily
+            const allowedInGame = ['game', 'customization', 'audio_settings', 'home', 'store', 'profile', 'ranking', 'messages'];
+            if (!allowedInGame.includes(currentScreen)) setCurrentScreen('game');
           } else {
-            // Pending players stay in lobby (waiting screen)
+            // If pending, rejected, or anything else, they CANNOT be in game.
+            // Force them to participant_lobby (waiting room).
             if (currentScreen !== 'participant_lobby') setCurrentScreen('participant_lobby');
           }
         } else {
-          const partLobbyScreens: AppScreen[] = ['participant_lobby', 'game', 'winners', 'customization', 'audio_settings'];
+          // If NOT playing (e.g. waiting), they should NOT be in 'game'.
+          const partLobbyScreens: AppScreen[] = ['participant_lobby', 'customization', 'audio_settings', 'home', 'store', 'profile', 'ranking', 'messages'];
           if (!partLobbyScreens.includes(currentScreen)) setCurrentScreen('participant_lobby');
         }
         return;
       }
 
-      // Cleanup if no active room found and we are on splash
-      if (currentScreen === 'splash') {
+      // Cleanup if no active room found 
+      console.log("App Watchdog: No active participation found. Cleaning up.");
+      if (roomId || currentScreen === 'splash' || currentScreen === 'lobby' || currentScreen === 'participant_lobby' || currentScreen === 'game') {
         clearBingolaLocalState();
         setRoomId(null);
         setCurrentScreen('home');
@@ -223,17 +247,26 @@ const App: React.FC = () => {
           roomInfo={activeRoom}
           onBack={() => {
             setCurrentScreen('home');
-            setRoomId(null);
-            clearBingolaLocalState();
-            setNoResume();
+            // Do NOT clear state here. GameScreen handles "Permanent Exit". 
+            // "Temporary Exit" just navigates home.
           }}
           onWin={() => setCurrentScreen('winners')}
-          onNavigate={setCurrentScreen}
+          onNavigate={(s) => s === 'customization' ? navigateToCustom('game') : setCurrentScreen(s)}
         />
       ) : (
         <div className="flex flex-col items-center justify-center h-screen text-white/50 bg-background-dark">
           <p className="animate-pulse mb-4">Sincronizando mesa...</p>
           <button onClick={() => setCurrentScreen('home')} className="text-[10px] underline">Voltar para Home</button>
+
+          <button onClick={() => {
+            useRoomStore.getState().setRoomId(null);
+            localStorage.removeItem('bingola_game_running');
+            localStorage.removeItem('bingola_active_room_id');
+            setCurrentScreen('home');
+            window.location.reload();
+          }} className="text-[10px] underline mt-8 text-red-500/30 hover:text-red-500 transition-colors uppercase tracking-widest font-black">
+            Travou? Forçar Saída
+          </button>
         </div>
       );
       case 'host_dashboard': return <HostDashboard onBack={() => setCurrentScreen('home')} onPublish={() => setCurrentScreen('lobby')} onNavigate={setCurrentScreen} />;
@@ -255,6 +288,8 @@ const App: React.FC = () => {
   return (
     <div className="bg-background-dark min-h-screen">
       <div className="max-w-[430px] mx-auto min-h-screen relative shadow-2xl">
+        <NotificationToast />
+        <PersistentGameLoop />
         {renderScreen()}
       </div>
     </div>

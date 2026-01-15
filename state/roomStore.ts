@@ -1,33 +1,16 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
+import { useNotificationStore } from './notificationStore';
 import type { Room, Participant } from './types';
 import { persistRoomId } from './persist';
 
 function accumulateDrawnNumbers(current: number[], incoming: number[]) {
   if (!Array.isArray(incoming)) return current;
-
-  // 1. Reset Detection: If incoming is empty, it's a reset (or new round).
-  // We trust checks upstream (Round ID etc), but generally if incoming is empty, 
-  // we should clear. 
-  if (incoming.length === 0) return incoming;
-
-  // 2. Stale Poll Protection: If incoming is a SUBSET of current (and current has more data),
-  // it means we have data that the incoming source (e.g. slow DB replica) hasn't seen yet.
-  // We keep our current, richer state.
-  // Exception: If it's a "New Game" that happens to reuse numbers? (Handled by empty reset usually)
-  const isSubset = incoming.every(n => current.includes(n));
-  if (isSubset && current.length > incoming.length) {
-    return current;
-  }
-
-  // 3. Normal Merge: Add any new numbers from incoming to current
-  // Use Set to ensure uniqueness and order (append new ones)
-  // Converting to Set interacts with order. 
-  // We want to preserve CURRENT order and append INCOMING new ones?
-  // Actually, standard Bingo order is "drawn sequence".
-  // If Incoming and Current differ in order, Set iteration might be weird.
-  // Safer: Union
-  return Array.from(new Set([...current, ...incoming]));
+  // Trust Server: Always use the latest list from server to avoid ghost numbers from optimistic updates or branches.
+  // The only exception is if incoming is empty, which might be a glitch OR a reset.
+  // RoomStore RESET usually handles hard resets.
+  // If we receive an empty list via realtime, it usually means New Round.
+  return incoming;
 }
 
 type RealtimeState = 'IDLE' | 'SUBSCRIBING' | 'SUBSCRIBED' | 'ERROR';
@@ -59,6 +42,7 @@ type RoomStore = {
   cleanupRoomId: string | null;
 
   inFlight: Record<string, boolean>;
+  myStatus: 'pending' | 'accepted' | 'rejected' | null;
 
   setRoomId: (id: string | null) => void;
 
@@ -69,6 +53,7 @@ type RoomStore = {
 
   approve: (participantId: string) => Promise<void>;
   reject: (participantId: string) => Promise<void>;
+  updateRoomStatus: (status: 'waiting' | 'playing' | 'finished') => Promise<void>;
 
   hardExit: (roomId: string, userId: string) => Promise<void>;
 
@@ -105,6 +90,7 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
   cleanupRoomId: null,
 
   inFlight: {},
+  myStatus: null,
 
   _cleanupSubscription: () => {
     const { channel } = get();
@@ -143,6 +129,7 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
         accepted: [],
         lastError: null,
         inFlight: {},
+        myStatus: null,
       });
     }
 
@@ -154,6 +141,7 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
         accepted: [],
         lastError: null,
         inFlight: {},
+        myStatus: null,
       });
     }
 
@@ -194,7 +182,7 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
       .from('participants')
       .select('*, profiles(username, avatar_url, level, bcoins)')
       .eq('room_id', roomId)
-      .in('status', ['pending', 'accepted']);
+      .in('status', ['pending', 'accepted', 'rejected']);
 
     // Guard: se mudou de sala no meio
     if (get().roomId && get().roomId !== roomId && get().subscribedRoomId !== roomId) return;
@@ -207,6 +195,20 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
     const pending = (data ?? []).filter((p: any) => p.status === 'pending');
     const accepted = (data ?? []).filter((p: any) => p.status === 'accepted');
     set({ pending, accepted });
+
+    // 1b. Sync myStatus
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      // Direct fetch for my status to be sure (including rejected)
+      const { data: myPart } = await supabase.from('participants')
+        .select('status')
+        .eq('room_id', roomId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (myPart) set({ myStatus: myPart.status as any });
+      else set({ myStatus: null });
+    }
 
     // 2. Refresh rápido no status da sala
     const { data: roomData } = await supabase
@@ -249,9 +251,13 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
           const current = get().room;
           const newRoom: any = payload.new;
 
-          const incomingDrawn = Array.isArray(newRoom.drawn_numbers) ? newRoom.drawn_numbers : [];
-          const currentDrawn = current?.drawn_numbers || [];
-          const mergedDrawn = accumulateDrawnNumbers(currentDrawn, incomingDrawn);
+          // Only update drawn_numbers if present in the payload
+          // If undefined, it means this update touched other columns (e.g. status)
+          // We preserve the current list.
+          let mergedDrawn = current?.drawn_numbers || [];
+          if (Array.isArray(newRoom.drawn_numbers)) {
+            mergedDrawn = accumulateDrawnNumbers(mergedDrawn, newRoom.drawn_numbers);
+          }
 
           set({ room: { ...current, ...newRoom, drawn_numbers: mergedDrawn } });
         }
@@ -377,7 +383,27 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
 
   approve: async (participantId) => {
     if (get().inFlight[participantId]) return;
+
+    // 1. Race Condition Guard: Check limit locally first
+    const s = get();
+    const limit = s.room?.player_limit || 20;
+    // Note: accepted length check should include optimistic updates AND THE HOST (+1)
+    if ((s.accepted.length + 1) >= limit) {
+      useNotificationStore.getState().show("Limite de jogadores atingido nesta mesa!", 'error');
+      return;
+    }
+
     set({ inFlight: { ...get().inFlight, [participantId]: true } });
+
+    // 2. Optimistic Update: Move from pending to accepted immediately
+    const participant = s.pending.find(p => p.id === participantId);
+    if (participant) {
+      const optimisticParticipant = { ...participant, status: 'accepted' as const };
+      set(state => ({
+        pending: state.pending.filter(p => p.id !== participantId),
+        accepted: [...state.accepted, optimisticParticipant]
+      }));
+    }
 
     try {
       const { error } = await supabase
@@ -386,9 +412,19 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
         .eq('id', participantId);
       if (error) throw error;
 
-      await get().refreshParticipants(get().roomId!);
+      // No need to refresh immediately as Realtime or Polling will catch it,
+      // and we already have the optimistic state.
+      // But we can do a background refresh to be safe.
+      get().refreshParticipants(get().roomId!);
     } catch {
-      // fallback
+      // Revert optimistic update on error
+      if (participant) {
+        set(state => ({
+          pending: [...state.pending, participant],
+          accepted: state.accepted.filter(p => p.id !== participantId)
+        }));
+      }
+      useNotificationStore.getState().show("Erro ao aprovar jogador.", 'error');
     } finally {
       set({ inFlight: { ...get().inFlight, [participantId]: false } });
     }
@@ -399,6 +435,37 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
     set({ inFlight: { ...get().inFlight, [participantId]: true } });
 
     try {
+      // 1. Get participant details to handle Ban Logic
+      const { data: part } = await supabase
+        .from('participants')
+        .select('room_id, user_id')
+        .eq('id', participantId)
+        .single();
+
+      if (part) {
+        try {
+          // 2. Increment rejection count
+          const { data: existingBan } = await supabase
+            .from('room_bans')
+            .select('rejection_count')
+            .eq('room_id', part.room_id)
+            .eq('user_id', part.user_id)
+            .maybeSingle();
+
+          const newCount = (existingBan?.rejection_count || 0) + 1;
+
+          // Ensure table 'room_bans' exists
+          await supabase.from('room_bans').upsert({
+            room_id: part.room_id,
+            user_id: part.user_id,
+            rejection_count: newCount
+          }, { onConflict: 'room_id,user_id' });
+        } catch (banErr) {
+          console.warn("Failed to update ban count:", banErr);
+        }
+      }
+
+      // 3. Update status
       const { error } = await supabase
         .from('participants')
         .update({ status: 'rejected' })
@@ -406,11 +473,18 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
       if (error) throw error;
 
       await get().refreshParticipants(get().roomId!);
-    } catch {
-      // fallback
+    } catch (err) {
+      console.error("Reject error:", err);
     } finally {
       set({ inFlight: { ...get().inFlight, [participantId]: false } });
     }
+  },
+
+  updateRoomStatus: async (status) => {
+    set(state => {
+      if (!state.room) return {};
+      return { room: { ...state.room, status: status as any } };
+    });
   },
 
   hardExit: async (roomId, userId) => {

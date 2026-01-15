@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { AppScreen } from '../types';
 import { useRoomStore } from '../state/roomStore';
+import { useNotificationStore } from '../state/notificationStore';
 
 interface Props {
   onBack: () => void;
@@ -18,10 +19,12 @@ export const LobbyScreen: React.FC<Props> = ({ onBack, onStart, onNavigate }) =>
   const approve = useRoomStore(s => s.approve);
   const reject = useRoomStore(s => s.reject);
   const refreshParticipants = useRoomStore(s => s.refreshParticipants);
+  const subscribe = useRoomStore(s => s.subscribe);
 
   const [hostProfile, setHostProfile] = useState<any>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!roomId) return;
@@ -29,9 +32,13 @@ export const LobbyScreen: React.FC<Props> = ({ onBack, onStart, onNavigate }) =>
     // Garante dados frescos ao entrar
     refreshParticipants(roomId);
 
+    // Subscribe to Realtime events (CRITICAL FIX)
+    const unsubscribe = subscribe(roomId);
+
     const hydrateHost = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
+        setCurrentUserId(user.id);
         const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
         if (profile) setHostProfile({
           id: profile.id,
@@ -44,18 +51,36 @@ export const LobbyScreen: React.FC<Props> = ({ onBack, onStart, onNavigate }) =>
       }
     };
     hydrateHost();
-  }, [roomId, refreshParticipants]);
+
+    return () => {
+      unsubscribe();
+    };
+  }, [roomId, refreshParticipants, subscribe]);
 
   useEffect(() => {
     if (pending.length > 0) setShowAuthModal(true);
   }, [pending.length]);
 
+  // Auto-close modal when empty
+  useEffect(() => {
+    if (pending.length === 0 && showAuthModal) {
+      setShowAuthModal(false);
+    }
+  }, [pending.length, showAuthModal]);
+
   // Redireciona se a sala já estiver jogando (ex.: refresh ou trigger remoto)
   useEffect(() => {
-    if (room?.status === 'playing') {
-      onStart();
+    if (room?.status === 'playing' && currentUserId) {
+      const isHost = room.host_id === currentUserId;
+      // Strict check: must be in the accepted list with status 'accepted'
+      const isAccepted = accepted.some(p => p.user_id === currentUserId && p.status === 'accepted');
+
+      if (isHost || isAccepted) {
+        onStart();
+      }
+      // If not strictly accepted, do NOTHING. Stay here waiting for approval.
     }
-  }, [room?.status, onStart]);
+  }, [room?.status, onStart, currentUserId, accepted, room?.host_id]);
 
   const handleShare = async () => {
     if (!room) return;
@@ -65,59 +90,74 @@ export const LobbyScreen: React.FC<Props> = ({ onBack, onStart, onNavigate }) =>
         await navigator.share({ title: 'Bingola', text: shareText });
       } else {
         await navigator.clipboard.writeText(shareText);
-        alert("PIN copiado para a área de transferência!");
+        useNotificationStore.getState().show("PIN copiado!", 'info');
       }
     } catch (err) {
-      alert("PIN: " + room.code);
+      useNotificationStore.getState().show("PIN: " + room.code, 'info');
     }
   };
 
   const handleAuthorize = async (participantId: string, allow: boolean) => {
-    if (allow) await approve(participantId);
-    else await reject(participantId);
+    if (allow) {
+      // FIX: Check Player Limit before approving (Host + Accepted)
+      const limit = room?.player_limit || 20;
+      if ((accepted.length + 1) >= limit) {
+        useNotificationStore.getState().show("Limite de jogadores atingido nesta mesa!", 'error');
+        return;
+      }
+
+      await approve(participantId);
+      useNotificationStore.getState().show("Jogador aceito!", 'success');
+    } else {
+      await reject(participantId);
+    }
   };
 
   const handleStart = async () => {
     if (!room) return;
 
-    // ✅ Envia broadcast para forçar navegação instantânea dos participantes
-    const channel = useRoomStore.getState().channel;
-    if (channel) {
-      channel.send({
-        type: 'broadcast',
-        event: 'game_started',
-        payload: { roomId: room.id }
-      });
-    }
-
-    const { error } = await supabase
-      .from('rooms')
-      .update({ status: 'playing' })
-      .eq('id', room.id);
-
-    if (error) {
-      alert("Erro ao iniciar partida no servidor.");
-      return;
-    }
-
+    // 1. Optimistic Updates (Instant Feedback)
+    useRoomStore.getState().updateRoomStatus('playing');
     localStorage.setItem('bingola_game_running', 'true');
     localStorage.setItem('bingola_is_paused', 'false');
-    localStorage.setItem('bingola_last_draw_time', Date.now().toString());
+    // Force immediate draw
+    localStorage.setItem('bingola_last_draw_time', (Date.now() - 60000).toString());
     localStorage.removeItem('bingola_player_marked');
     localStorage.removeItem('bingola_last_winner');
+
+    // 2. Navigate immediately
     onStart();
+
+    // 3. Background Operations
+    try {
+      // Broadcast
+      const channel = useRoomStore.getState().channel;
+      if (channel) {
+        channel.send({
+          type: 'broadcast',
+          event: 'game_started',
+          payload: { roomId: room.id }
+        });
+      }
+
+      // Database Update
+      const { error } = await supabase
+        .from('rooms')
+        .update({ status: 'playing' })
+        .eq('id', room.id);
+
+      if (error) throw error;
+
+    } catch (err) {
+      console.error("Background Start Error:", err);
+      // If it fails, we might want to revert, but usually it succeeds.
+      // For now, just toast.
+      useNotificationStore.getState().show("Sincronizando início...", 'info');
+    }
   };
 
   const handleBack = async () => {
-    if (room && room.status === 'lobby') {
-      if (window.confirm("Deseja cancelar esta mesa? Se você sair agora, os jogadores não poderão entrar.")) {
-        await supabase.from('rooms').update({ status: 'finished' }).eq('id', room.id);
-        await supabase.from('participants').delete().eq('room_id', room.id);
-        useRoomStore.getState().setRoomId(null);
-        onBack();
-        return;
-      }
-    }
+    // Just minimize (navigate home) without cancelling
     onBack();
   };
 
@@ -191,7 +231,9 @@ export const LobbyScreen: React.FC<Props> = ({ onBack, onStart, onNavigate }) =>
                   name: profile?.username || 'Jogador',
                   avatar: profile?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100',
                   level: profile?.level,
-                  bcoins: profile?.bcoins
+                  bcoins: profile?.bcoins,
+                  id: p.id, // Participant ID for kicking
+                  userId: p.user_id // User ID for identifying self
                 })}>
                   <div className="relative p-0.5 rounded-full border-2 border-white/10">
                     <div className="size-14 rounded-full overflow-hidden">
@@ -277,6 +319,23 @@ export const LobbyScreen: React.FC<Props> = ({ onBack, onStart, onNavigate }) =>
                 <p className="font-bold">8</p>
               </div>
             </div>
+
+            {/* Kick Button (Host Only) */}
+            {room.host_id === currentUserId && selectedPlayer.userId !== currentUserId && (
+              <button
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  if (window.confirm(`Deseja remover ${selectedPlayer.name} da mesa?`)) {
+                    await reject(selectedPlayer.id);
+                    useNotificationStore.getState().show("Jogador removido!", 'success');
+                    setSelectedPlayer(null);
+                  }
+                }}
+                className="w-full h-14 bg-red-500/10 text-red-500 font-black rounded-2xl shadow-none mb-4 uppercase text-xs hover:bg-red-500 hover:text-white transition-all border border-red-500/20"
+              >
+                REMOVER DA MESA
+              </button>
+            )}
 
             <button onClick={() => setSelectedPlayer(null)} className="w-full h-16 bg-primary text-white font-black rounded-2xl shadow-xl shadow-primary/20">FECHAR</button>
           </div>

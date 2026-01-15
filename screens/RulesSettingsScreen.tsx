@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useRoomStore } from '../state/roomStore';
+import { useNotificationStore } from '../state/notificationStore';
 
 interface Props {
   onBack: () => void;
@@ -10,6 +11,7 @@ interface Props {
 export const RulesSettingsScreen: React.FC<Props> = ({ onBack }) => {
   const room = useRoomStore(s => s.room);
   const [loading, setLoading] = useState(false);
+  const isTouched = React.useRef(false); // Track if user has modified anything
   const [rules, setRules] = useState({
     cinquina: true,
     cantos: false,
@@ -18,6 +20,9 @@ export const RulesSettingsScreen: React.FC<Props> = ({ onBack }) => {
   });
 
   useEffect(() => {
+    // Only sync from server if user hasn't started editing yet
+    if (isTouched.current) return;
+
     if (room?.winning_patterns) {
       if (typeof room.winning_patterns === 'object') {
         setRules(prev => ({ ...prev, ...room.winning_patterns }));
@@ -30,6 +35,11 @@ export const RulesSettingsScreen: React.FC<Props> = ({ onBack }) => {
       }
     }
   }, [room]);
+
+  const toggleRule = (id: string) => {
+    isTouched.current = true; // Lock incoming updates
+    setRules(prev => ({ ...prev, [id]: !prev[id as keyof typeof prev] }));
+  };
 
   const handleSave = async () => {
     if (!room?.id) return;
@@ -48,9 +58,9 @@ export const RulesSettingsScreen: React.FC<Props> = ({ onBack }) => {
     setLoading(false);
     if (error) {
       console.error("Erro ao salvar regras:", error);
-      alert("Aviso: As regras foram salvas localmente, mas houve um erro ao sincronizar com o banco de dados. Verifique se a coluna 'winning_patterns' existe na tabela 'rooms'.");
+      useNotificationStore.getState().show("Salvo localmente (Erro de Sync)", 'error');
     } else {
-      alert("Regras sincronizadas com sucesso!");
+      useNotificationStore.getState().show("Regras sincronizadas com sucesso!", 'success');
     }
     onBack();
   };
@@ -75,7 +85,7 @@ export const RulesSettingsScreen: React.FC<Props> = ({ onBack }) => {
         ].map(item => (
           <div
             key={item.id}
-            onClick={() => !item.locked && setRules({ ...rules, [item.id]: !rules[item.id as keyof typeof rules] })}
+            onClick={() => !item.locked && toggleRule(item.id)}
             className={`p-6 rounded-3xl border transition-all cursor-pointer flex items-center justify-between ${rules[item.id as keyof typeof rules] ? 'bg-primary/10 border-primary' : 'bg-white/5 border-white/5'}`}
           >
             <div>

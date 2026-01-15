@@ -12,13 +12,12 @@ interface Props {
 export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
   const roomId = useRoomStore(s => s.roomId);
   const room = useRoomStore(s => s.room);
-  const pending = useRoomStore(s => s.pending);
-  const accepted = useRoomStore(s => s.accepted);
+  const acceptedList = useRoomStore(s => s.accepted);
+  const myStatus = useRoomStore(s => s.myStatus);
   const refreshParticipants = useRoomStore(s => s.refreshParticipants);
 
   const [hostProfile, setHostProfile] = useState<any>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
-  const [myStatus, setMyStatus] = useState<'pending' | 'accepted' | null>(null);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const navigatedToGameRef = useRef(false);
 
@@ -41,27 +40,14 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
       }
     };
 
-    const checkMyStatus = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user && roomId) {
-        setCurrentUser(user);
-        const { data: part } = await supabase.from('participants').select('status').eq('room_id', roomId).eq('user_id', user.id).maybeSingle();
-        if (part) setMyStatus(part.status);
-      }
-    };
-
     hydrateHost();
-    checkMyStatus();
   }, [roomId, room?.host_id, refreshParticipants]);
 
-  // Sync my status from accepted/pending lists
   useEffect(() => {
-    if (!currentUser) return;
-    const isAccepted = accepted.some(p => p.user_id === currentUser.id);
-    const isPending = pending.some(p => p.user_id === currentUser.id);
-    if (isAccepted) setMyStatus('accepted');
-    else if (isPending) setMyStatus('pending');
-  }, [accepted, pending, currentUser]);
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) setCurrentUser(user);
+    });
+  }, []);
 
   // Immediate navigation via Realtime Broadcast
   useEffect(() => {
@@ -71,14 +57,13 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
     if (!channel) return;
 
     const sub = channel.on('broadcast', { event: 'game_started' }, (payload) => {
-      if (payload.roomId === roomId && !navigatedToGameRef.current) {
+      // FIX: Only auto-navigate if ACCEPTED
+      if (payload.roomId === roomId && !navigatedToGameRef.current && myStatus === 'accepted') {
         navigatedToGameRef.current = true;
         onNavigate('game');
       }
     });
 
-    // Safe cleanup not strictly required as channel is managed by store, 
-    // and off() might not be available or stable on the proxy object.
     return () => {
       try {
         if (channel && typeof (channel as any).off === 'function') {
@@ -86,15 +71,63 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
         }
       } catch (err) { console.warn("Failed to detach listener", err); }
     };
-  }, [roomId, onNavigate]);
+  }, [roomId, onNavigate, myStatus]);
 
   // Fallback navigation via DB poll
   useEffect(() => {
+    // FIX: Only auto-navigate if ACCEPTED
+    if (myStatus !== 'accepted') return;
+
     if (room?.status === 'playing' && !navigatedToGameRef.current) {
       navigatedToGameRef.current = true;
       onNavigate('game');
     }
-  }, [room?.status, onNavigate]);
+  }, [room?.status, onNavigate, myStatus]);
+
+  if (myStatus === 'rejected') {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-black relative overflow-hidden animate-in fade-in duration-700">
+        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-20"></div>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-red-600/20 rounded-full blur-[120px] animate-pulse"></div>
+
+        <div className="relative z-10 flex flex-col items-center text-center space-y-8 p-8 max-w-sm w-full">
+          <div className="relative">
+            <div className="size-32 bg-red-600 rounded-full flex items-center justify-center shadow-[0_0_60px_rgba(220,38,38,0.5)] border-4 border-red-400 animate-bounce">
+              <span className="material-symbols-outlined text-white text-6xl">block</span>
+            </div>
+            <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-white text-red-600 text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full shadow-lg">
+              Bloqueado
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <h2 className="text-4xl font-black italic uppercase tracking-tighter text-white drop-shadow-md">
+              Acesso <span className="text-red-500">Negado</span>
+            </h2>
+            <p className="text-white/60 text-sm leading-relaxed font-medium">
+              O anfitrião recusou sua entrada ou removeu você permanentemente desta mesa.
+            </p>
+          </div>
+
+          <div className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 backdrop-blur-sm">
+            <p className="text-[10px] uppercase tracking-widest text-white/30 font-black mb-1">Mesa</p>
+            <p className="text-white font-bold text-lg">{room?.name || 'Mesa Desconhecida'}</p>
+          </div>
+
+          <button
+            onClick={() => {
+              useRoomStore.getState().setRoomId(null);
+              onNavigate('home');
+            }}
+            className="w-full h-14 bg-white text-black rounded-xl font-black text-sm uppercase tracking-wider hover:scale-105 active:scale-95 transition-all shadow-[0_0_30px_rgba(255,255,255,0.2)] flex items-center justify-center gap-2"
+          >
+            <span className="material-symbols-outlined">arrow_back</span>
+            Voltar ao Início
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (!room || !myStatus) return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-background-dark text-white/50 space-y-4">
@@ -107,7 +140,7 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
   if (myStatus === 'pending') return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-background-dark text-white p-8 text-center space-y-8">
       <div className="size-32 bg-primary/10 rounded-[3rem] flex items-center justify-center animate-pulse">
-        <span className="material-symbols-outlined text- primary text-6xl">pending_actions</span>
+        <span className="material-symbols-outlined text-primary text-6xl">pending_actions</span>
       </div>
       <div className="space-y-4">
         <h2 className="text-3xl font-black italic uppercase tracking-tighter">Aguardando Aprovação</h2>
@@ -180,7 +213,7 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
           <div className="flex items-center justify-between">
             <h3 className="text-xl font-black italic">Jogadores na Mesa</h3>
             <span className="bg-white/5 text-white/40 text-[10px] font-black px-3 py-1 rounded-full uppercase">
-              {accepted.length + (room.host_id ? 1 : 0)} / {room.player_limit || 20}
+              {acceptedList.length + (room.host_id ? 1 : 0)} / {room.player_limit || 20}
             </span>
           </div>
 
@@ -189,7 +222,7 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
               <div className="flex flex-col items-center gap-2" onClick={() => setSelectedPlayer(hostProfile)}>
                 <div className="relative p-0.5 rounded-full border-2 border-primary">
                   <div className="size-14 rounded-full overflow-hidden">
-                    <img src={hostProfile.avatar} className="w-full h-full object-cover" />
+                    <img src={hostProfile.avatar} className="w-full h-full object-cover" alt="Host" />
                   </div>
                   <div className="absolute -top-1 -right-1 bg-yellow-500 text-black size-5 rounded-full flex items-center justify-center border-2 border-background-dark">
                     <span className="material-symbols-outlined text-[10px] font-black">crown</span>
@@ -198,24 +231,21 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
                 <span className="text-[10px] font-bold text-white/60 truncate w-full text-center">{hostProfile.name}</span>
               </div>
             )}
-            {accepted.map((p, i) => {
-              const profile = p.profiles;
-              return (
-                <div key={i} className="flex flex-col items-center gap-2" onClick={() => setSelectedPlayer({
-                  name: profile?.username || 'Jogador',
-                  avatar: profile?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100',
-                  level: profile?.level,
-                  bcoins: profile?.bcoins
-                })}>
-                  <div className="relative p-0.5 rounded-full border-2 border-white/10">
-                    <div className="size-14 rounded-full overflow-hidden">
-                      <img src={profile?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100'} className="w-full h-full object-cover" />
-                    </div>
+            {acceptedList.map((p, i) => (
+              <div key={i} className="flex flex-col items-center gap-2" onClick={() => setSelectedPlayer({
+                name: p.profiles?.username || 'Jogador',
+                avatar: p.profiles?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100',
+                level: p.profiles?.level,
+                bcoins: p.profiles?.bcoins
+              })}>
+                <div className="relative p-0.5 rounded-full border-2 border-white/10">
+                  <div className="size-14 rounded-full overflow-hidden">
+                    <img src={p.profiles?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100'} className="w-full h-full object-cover" alt="Player" />
                   </div>
-                  <span className="text-[10px] font-bold text-white/60 truncate w-full text-center">{profile?.username || 'Jogador'}</span>
                 </div>
-              )
-            })}
+                <span className="text-[10px] font-bold text-white/60 truncate w-full text-center">{p.profiles?.username || 'Jogador'}</span>
+              </div>
+            ))}
           </div>
         </section>
 
@@ -239,7 +269,7 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
         <div className="fixed inset-0 z-[110] bg-black/90 backdrop-blur-md flex items-center justify-center p-6" onClick={() => setSelectedPlayer(null)}>
           <div className="bg-surface-dark border border-white/10 p-8 rounded-[3rem] w-full max-w-sm text-center shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="size-24 rounded-full border-4 border-primary/20 mx-auto mb-6 p-1">
-              <img src={selectedPlayer.avatar} className="size-full rounded-full object-cover" />
+              <img src={selectedPlayer.avatar} className="size-full rounded-full object-cover" alt="User Profile" />
             </div>
             <h3 className="text-2xl font-black italic mb-1">{selectedPlayer.name}</h3>
             <p className="text-[10px] font-black text-primary uppercase tracking-[0.3em] mb-8">Nível {selectedPlayer.level || 1} • {selectedPlayer.bcoins || 0} BCOINS</p>
