@@ -1,5 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
 import { AppScreen } from '../types';
 
 interface Props {
@@ -11,53 +12,47 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
   const [user, setUser] = useState<any>(null);
   const [isUpdating, setIsUpdating] = useState(false);
 
-  const loadUser = () => {
-    const userJson = localStorage.getItem('bingola_current_user');
-    if (userJson) {
-      setUser(JSON.parse(userJson));
+  const fetchProfile = async () => {
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    if (authUser) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', authUser.id)
+        .single();
+
+      if (profile) {
+        setUser({
+          ...profile,
+          email: authUser.email
+        });
+      }
     }
   };
 
   useEffect(() => {
-    loadUser();
+    fetchProfile();
   }, []);
 
-  const handleLogout = () => {
-    localStorage.removeItem('bingola_current_user');
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     onNavigate('login');
   };
 
-  const addTestCoins = () => {
-    if (isUpdating) return;
+  const addTestCoins = async () => {
+    if (isUpdating || !user) return;
     setIsUpdating(true);
-    
-    const userJson = localStorage.getItem('bingola_current_user');
-    let currentUser = user;
 
-    if (!userJson) {
-      currentUser = {
-        id: 'test_' + Date.now(),
-        name: 'Tester',
-        email: 'test@bingola.com',
-        bcoins: 100,
-        level: 1
-      };
-      localStorage.setItem('bingola_users', JSON.stringify([currentUser]));
-    } else {
-      currentUser = JSON.parse(userJson);
-      currentUser.bcoins = (currentUser.bcoins || 0) + 100;
-      
-      const usersJson = localStorage.getItem('bingola_users');
-      if (usersJson) {
-        const users = JSON.parse(usersJson);
-        const updatedUsers = users.map((u: any) => u.id === currentUser.id ? currentUser : u);
-        localStorage.setItem('bingola_users', JSON.stringify(updatedUsers));
-      }
+    const newBalance = (user.bcoins || 0) + 100;
+    const { error } = await supabase
+      .from('profiles')
+      .update({ bcoins: newBalance })
+      .eq('id', user.id);
+
+    if (!error) {
+      setUser({ ...user, bcoins: newBalance });
     }
 
-    localStorage.setItem('bingola_current_user', JSON.stringify(currentUser));
-    setUser({ ...currentUser });
-    
     setTimeout(() => setIsUpdating(false), 1000);
   };
 
@@ -83,7 +78,7 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
               LVL {user?.level || 1}
             </div>
           </div>
-          <h1 className="text-3xl font-black text-white tracking-tight">@{user?.name || 'Explorador'}</h1>
+          <h1 className="text-3xl font-black text-white tracking-tight">@{user?.username || 'Explorador'}</h1>
           <p className="text-white/40 text-sm mt-1">{user?.email || 'Visitante'}</p>
         </div>
 
@@ -102,38 +97,38 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
 
         <div className="space-y-4">
           <h3 className="text-[10px] font-black uppercase tracking-widest text-white/30 px-1">Personalização</h3>
-          
-          <button 
+
+          <button
             onClick={() => onNavigate('customization')}
             className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-between active:scale-95 transition-all"
           >
             <div className="flex items-center gap-4">
-               <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center">
-                  <span className="material-symbols-outlined text-purple-500">style</span>
-               </div>
-               <div className="text-left">
-                  <p className="font-bold text-sm">Estilo da Cartela</p>
-                  <p className="text-[10px] text-white/40">Pré-definir cores, fontes e carimbos</p>
-               </div>
+              <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center">
+                <span className="material-symbols-outlined text-purple-500">style</span>
+              </div>
+              <div className="text-left">
+                <p className="font-bold text-sm">Estilo da Cartela</p>
+                <p className="text-[10px] text-white/40">Pré-definir cores, fontes e carimbos</p>
+              </div>
             </div>
             <span className="material-symbols-outlined text-white/20">chevron_right</span>
           </button>
 
           <h3 className="text-[10px] font-black uppercase tracking-widest text-white/30 px-1 pt-4">Ações Rápidas</h3>
-          
-          <button 
+
+          <button
             onClick={addTestCoins}
             disabled={isUpdating}
             className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-between active:scale-95 transition-all"
           >
             <div className="flex items-center gap-4">
-               <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center">
-                  <span className="material-symbols-outlined text-primary">{isUpdating ? 'sync' : 'add_card'}</span>
-               </div>
-               <div className="text-left">
-                  <p className="font-bold text-sm">Recarga de Teste</p>
-                  <p className="text-[10px] text-white/40">Adicionar +100 BCOINS instantaneamente</p>
-               </div>
+              <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center">
+                <span className="material-symbols-outlined text-primary">{isUpdating ? 'sync' : 'add_card'}</span>
+              </div>
+              <div className="text-left">
+                <p className="font-bold text-sm">Recarga de Teste</p>
+                <p className="text-[10px] text-white/40">Adicionar +100 BCOINS instantaneamente</p>
+              </div>
             </div>
             <span className="material-symbols-outlined text-white/20">chevron_right</span>
           </button>

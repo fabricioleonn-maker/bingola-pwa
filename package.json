@@ -12,8 +12,10 @@
     "@capacitor/android": "^8.0.0",
     "@capacitor/cli": "^8.0.0",
     "@capacitor/core": "^8.0.0",
+    "@supabase/supabase-js": "^2.90.1",
     "react": "^19.2.3",
-    "react-dom": "^19.2.3"
+    "react-dom": "^19.2.3",
+    "zustand": "^5.0.10"
   },
   "devDependencies": {
     "@types/node": "^22.19.6",

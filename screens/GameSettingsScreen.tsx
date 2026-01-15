@@ -1,5 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
+import { useRoomStore } from '../state/roomStore';
 import { AppScreen } from '../types';
 
 interface Props {
@@ -8,183 +10,143 @@ interface Props {
 }
 
 export const GameSettingsScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
+  const room = useRoomStore(s => s.room);
+  const [loading, setLoading] = useState(false);
   const [interval, setIntervalVal] = useState(12);
-  const [status, setStatus] = useState<'idle' | 'searching' | 'error' | 'connected'>('idle');
-  const [connectedTvName, setConnectedTvName] = useState<string | null>(null);
+  const [assistMode, setAssistMode] = useState(false);
 
   useEffect(() => {
-    const savedSettings = localStorage.getItem('bingola_game_settings');
-    if (savedSettings) {
-      const settings = JSON.parse(savedSettings);
-      setIntervalVal(settings.interval || 12);
-      if (settings.connectedTvName) {
-        setConnectedTvName(settings.connectedTvName);
-        setStatus('connected');
+    // Load draw interval from room or local
+    if (room?.draw_interval) {
+      setIntervalVal(room.draw_interval);
+    }
+
+    // Load local settings (including assistMode)
+    const saved = localStorage.getItem('bingola_game_settings');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.interval && !room?.draw_interval) setIntervalVal(parsed.interval);
+        setAssistMode(!!parsed.assistMode); // Default false
+      } catch (e) {
+        console.error("Erro ao carregar configurações locais");
       }
     }
-  }, []);
+  }, [room]);
 
-  // Persiste o ritmo imediatamente no localStorage para não perder ao navegar entre sub-telas
-  useEffect(() => {
-    const currentSettings = JSON.parse(localStorage.getItem('bingola_game_settings') || '{}');
-    localStorage.setItem('bingola_game_settings', JSON.stringify({ ...currentSettings, interval }));
-  }, [interval]);
+  const handleSave = async () => {
+    setLoading(true);
 
-  const handleSave = () => {
-    const currentSettings = JSON.parse(localStorage.getItem('bingola_game_settings') || '{}');
-    const newSettings = { ...currentSettings, interval, connectedTvName };
-    localStorage.setItem('bingola_game_settings', JSON.stringify(newSettings));
+    // Save locally
+    const current = JSON.parse(localStorage.getItem('bingola_game_settings') || '{}');
+    localStorage.setItem('bingola_game_settings', JSON.stringify({
+      ...current,
+      interval,
+      assistMode
+    }));
+
+    // Update Supabase if host
+    if (room?.id) {
+      const { error } = await supabase
+        .from('rooms')
+        .update({ draw_interval: interval })
+        .eq('id', room.id);
+
+      if (error) {
+        console.error("Erro ao salvar ritmo no banco:", error);
+      }
+    }
+
+    setLoading(false);
+    alert("Configurações salvas com sucesso!");
     onBack();
   };
 
-  const handleTvClick = async () => {
-    if (status === 'connected') {
-      setStatus('idle');
-      setConnectedTvName(null);
-      return;
-    }
-
-    setStatus('searching');
-    
-    // Simulação Técnica Realista:
-    // Em browsers, tentaríamos navigator.presentation.requestSession()
-    // Se falhar ou não houver hardware, mostramos erro.
-    setTimeout(() => {
-      const dice = Math.random();
-      if (dice > 0.7) { // 30% de chance de "achar" algo (simulado)
-        setConnectedTvName("Samsung Crystal UHD 4K");
-        setStatus('connected');
-      } else {
-        setStatus('error');
-        setConnectedTvName(null);
-        setTimeout(() => setStatus('idle'), 3000); // Volta ao normal após 3s de erro
-      }
-    }, 2500);
-  };
-
   return (
-    <div className="flex flex-col min-h-screen bg-background-light dark:bg-background-dark font-display">
-      <header className="sticky top-0 z-10 flex items-center bg-white dark:bg-background-dark p-4 border-b border-gray-100 dark:border-white/10 justify-between">
-        <button onClick={onBack} className="text-[#181511] dark:text-white flex size-12 items-center justify-start">
-          <span className="material-symbols-outlined">arrow_back_ios</span>
+    <div className="flex flex-col min-h-screen bg-background-dark font-display text-white">
+      <header className="sticky top-0 z-50 flex items-center bg-background-dark/95 backdrop-blur-md p-4 justify-between border-b border-white/5">
+        <button onClick={onBack} className="text-white flex size-10 items-center justify-center">
+          <span className="material-symbols-outlined">arrow_back</span>
         </button>
-        <h2 className="text-[#181511] dark:text-white text-lg font-bold leading-tight flex-1 text-center pr-12">Configurações da Mesa</h2>
+        <h2 className="text-lg font-bold flex-1 text-center pr-10 italic">Configurações</h2>
       </header>
 
-      <main className="flex-1 overflow-y-auto pb-32">
-        <div className="px-4 mt-6">
-          <button 
-            onClick={handleTvClick}
-            disabled={status === 'searching'}
-            className={`w-full rounded-2xl p-4 flex items-center gap-4 border transition-all ${
-              status === 'connected' ? 'bg-primary/10 border-primary/20' : 
-              status === 'error' ? 'bg-red-500/10 border-red-500/30' : 'bg-gray-100 dark:bg-white/5 border-white/10'
-            }`}
-          >
-            <div className={`p-2.5 rounded-xl flex items-center justify-center text-white shadow-lg ${
-              status === 'searching' ? 'animate-pulse bg-primary/50' : 
-              status === 'connected' ? 'bg-primary shadow-primary/20' : 
-              status === 'error' ? 'bg-red-500 shadow-red-500/20' : 'bg-gray-400'
-            }`}>
-              <span className="material-symbols-outlined">
-                {status === 'searching' ? 'search' : status === 'connected' ? 'tv' : status === 'error' ? 'error' : 'tv_off'}
-              </span>
-            </div>
-            <div className="flex-1 text-left">
-              <h4 className={`text-sm font-bold ${status === 'error' ? 'text-red-500' : 'dark:text-white'}`}>
-                {status === 'searching' ? 'Buscando dispositivos...' : 
-                 status === 'connected' ? 'Smart TV Conectada' : 
-                 status === 'error' ? 'Nenhuma TV Encontrada' : 'Espelhamento de Tela'}
-              </h4>
-              <p className="text-[#8a7960] dark:text-gray-400 text-xs">
-                {status === 'searching' ? 'Certifique-se que a TV está na mesma rede' : 
-                 status === 'connected' ? `Transmitindo em "${connectedTvName}"` : 
-                 status === 'error' ? 'Certifique-se que o Cast está ativo na TV' : 'Toque para sincronizar com sua TV'}
-              </p>
-            </div>
-            {status === 'connected' && <span className="material-symbols-outlined text-primary">check_circle</span>}
-          </button>
-        </div>
+      <main className="flex-1 p-6 space-y-8 pb-32">
+        <section className="space-y-6">
+          <h3 className="text-xl font-black italic">Ambiente</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <button
+              onClick={() => onNavigate('audio_settings')}
+              className="bg-white/5 border border-white/5 p-6 rounded-[2.5rem] flex flex-col items-center text-center hover:bg-white/10 transition-colors"
+            >
+              <span className="material-symbols-outlined text-primary text-3xl mb-2">volume_up</span>
+              <p className="font-bold text-xs uppercase tracking-widest">Som e Voz</p>
+            </button>
+            <button
+              onClick={() => onNavigate('rules_settings')}
+              className="bg-white/5 border border-white/5 p-6 rounded-[2.5rem] flex flex-col items-center text-center hover:bg-white/10 transition-colors"
+            >
+              <span className="material-symbols-outlined text-primary text-3xl mb-2">military_tech</span>
+              <p className="font-bold text-xs uppercase tracking-widest">Premiação</p>
+            </button>
+          </div>
+        </section>
 
-        <div className="mt-8 px-4 space-y-6">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-[#181511] dark:text-white text-lg font-bold">Ritmo do Jogo</h3>
-              <span className="text-primary font-black text-sm">{interval}s</span>
+        <section className="space-y-6">
+          <h3 className="text-xl font-black italic">Assistência de Jogo</h3>
+          <div
+            onClick={() => setAssistMode(!assistMode)}
+            className={`flex items-center justify-between p-6 rounded-[2.5rem] border transition-all cursor-pointer ${assistMode ? 'bg-primary/10 border-primary shadow-[0_0_30px_rgba(255,61,113,0.1)]' : 'bg-white/5 border-white/5'}`}
+          >
+            <div className="flex items-center gap-4">
+              <div className={`size-12 rounded-2xl flex items-center justify-center ${assistMode ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'bg-white/5 text-white/20'}`}>
+                <span className="material-symbols-outlined">{assistMode ? 'visibility' : 'visibility_off'}</span>
+              </div>
+              <div>
+                <p className="font-bold text-sm">Destaque de Sorteados</p>
+                <p className="text-[10px] text-white/30 uppercase tracking-widest">Oculta visualmente os números não chamados</p>
+              </div>
             </div>
-            <div className="relative flex w-full flex-col gap-4">
-              <input 
-                type="range" 
-                min="5" 
-                max="30" 
-                value={interval} 
-                onChange={(e) => setIntervalVal(parseInt(e.target.value))}
-                className="w-full h-2 bg-gray-200 dark:bg-white/10 rounded-full appearance-none accent-primary cursor-pointer"
-              />
-              <p className="text-[#8a7960] dark:text-gray-400 text-xs">A alteração do ritmo é aplicada imediatamente a todos os participantes ao salvar.</p>
+            <div className={`w-14 h-8 rounded-full relative transition-colors ${assistMode ? 'bg-primary' : 'bg-white/10'}`}>
+              <div className={`absolute top-1 size-6 bg-white rounded-full shadow-md transition-all ${assistMode ? 'left-7' : 'left-1'}`}></div>
             </div>
           </div>
+        </section>
 
-          <div className="h-px bg-gray-100 dark:bg-white/5"></div>
+        <section className="space-y-6">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xl font-black italic">Ritmo do Sorteio</h3>
+            <span className="bg-primary/20 text-primary text-xs font-black px-3 py-1 rounded-full">{interval}s</span>
+          </div>
+          <p className="text-[10px] text-white/40 uppercase tracking-widest leading-loose">
+            Define o intervalo entre cada bola sorteada.
+          </p>
 
-          <section className="space-y-4">
-            <h3 className="text-[#181511] dark:text-white text-lg font-bold">Personalização e Extras</h3>
-            <div className="grid grid-cols-1 gap-3">
-              <button 
-                onClick={() => onNavigate('audio_settings')}
-                className="flex items-center justify-between p-4 bg-white dark:bg-surface-dark border border-gray-100 dark:border-white/5 rounded-2xl"
-              >
-                <div className="flex items-center gap-4 text-left">
-                  <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-500 flex items-center justify-center">
-                    <span className="material-symbols-outlined">volume_up</span>
-                  </div>
-                  <div>
-                    <p className="font-bold text-sm">Controle de Áudio</p>
-                    <p className="text-xs text-gray-400">Locutor, volumes e efeitos</p>
-                  </div>
-                </div>
-                <span className="material-symbols-outlined text-gray-300">chevron_right</span>
-              </button>
-
-              <button 
-                onClick={() => onNavigate('rules_settings')}
-                className="flex items-center justify-between p-4 bg-white dark:bg-surface-dark border border-gray-100 dark:border-white/5 rounded-2xl"
-              >
-                <div className="flex items-center gap-4 text-left">
-                  <div className="w-10 h-10 rounded-xl bg-orange-500/10 text-orange-500 flex items-center justify-center">
-                    <span className="material-symbols-outlined">gavel</span>
-                  </div>
-                  <div>
-                    <p className="font-bold text-sm">Regras de Vitória</p>
-                    <p className="text-xs text-gray-400">Defina os prêmios da mesa</p>
-                  </div>
-                </div>
-                <span className="material-symbols-outlined text-gray-300">chevron_right</span>
-              </button>
-
-              <button 
-                onClick={() => onNavigate('customization')}
-                className="flex items-center justify-between p-4 bg-white dark:bg-surface-dark border border-gray-100 dark:border-white/5 rounded-2xl"
-              >
-                <div className="flex items-center gap-4 text-left">
-                  <div className="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-500 flex items-center justify-center">
-                    <span className="material-symbols-outlined">style</span>
-                  </div>
-                  <div>
-                    <p className="font-bold text-sm">Estilo da Cartela</p>
-                    <p className="text-xs text-gray-400">Cores, temas e marcação</p>
-                  </div>
-                </div>
-                <span className="material-symbols-outlined text-gray-300">chevron_right</span>
-              </button>
+          <div className="bg-white/5 p-8 rounded-[3rem] border border-white/5">
+            <input
+              type="range"
+              min="5"
+              max="30"
+              step="1"
+              value={interval}
+              onChange={(e) => setIntervalVal(parseInt(e.target.value))}
+              className="w-full h-2 bg-white/10 rounded-full appearance-none accent-primary cursor-pointer"
+            />
+            <div className="flex justify-between mt-4 text-[10px] font-black text-white/20 uppercase tracking-tighter">
+              <span>Rápido (5s)</span>
+              <span>Lento (30s)</span>
             </div>
-          </section>
-        </div>
+          </div>
+        </section>
       </main>
 
-      <footer className="fixed bottom-0 left-0 right-0 p-6 bg-white/80 dark:bg-background-dark/80 backdrop-blur-md border-t border-gray-100 dark:border-white/10">
-        <button onClick={handleSave} className="w-full bg-primary text-white font-black py-4 rounded-2xl shadow-xl shadow-primary/20 active:scale-95 transition-all">
-          CONFIRMAR AJUSTES
+      <footer className="fixed bottom-0 left-0 right-0 p-6 bg-background-dark/80 backdrop-blur-md border-t border-white/5 z-50">
+        <button
+          onClick={handleSave}
+          disabled={loading}
+          className="w-full bg-primary text-white font-black py-5 rounded-[2rem] shadow-xl shadow-primary/20 active:scale-95 transition-all disabled:opacity-50 italic"
+        >
+          {loading ? 'SINCRONIZANDO...' : 'SALVAR CONFIGURAÇÕES'}
         </button>
       </footer>
     </div>

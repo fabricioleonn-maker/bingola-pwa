@@ -9,7 +9,6 @@ export const AudioSettingsScreen: React.FC<Props> = ({ onBack }) => {
   const [selectedVoice, setSelectedVoice] = useState('vovo');
   const [narrationVolume, setNarrationVolume] = useState(80);
   const [soundtrackVolume, setSoundtrackVolume] = useState(40);
-
   useEffect(() => {
     const savedSettings = localStorage.getItem('bingola_game_settings');
     if (savedSettings) {
@@ -19,7 +18,7 @@ export const AudioSettingsScreen: React.FC<Props> = ({ onBack }) => {
         setNarrationVolume(settings.narrationVolume ?? 80);
         setSoundtrackVolume(settings.soundtrackVolume ?? 40);
       } catch (e) {
-        console.error("Erro ao carregar áudio");
+        console.error("Erro ao carregar configurações");
       }
     }
   }, []);
@@ -37,11 +36,12 @@ export const AudioSettingsScreen: React.FC<Props> = ({ onBack }) => {
         <button onClick={onBack} className="text-slate-900 dark:text-white flex size-10 items-center justify-center rounded-full">
           <span className="material-symbols-outlined">arrow_back</span>
         </button>
-        <h2 className="text-slate-900 dark:text-white text-lg font-bold flex-1 text-center pr-10">Controle de Áudio</h2>
+        <h2 className="text-slate-900 dark:text-white text-lg font-bold flex-1 text-center pr-10">Preferências de Áudio</h2>
       </header>
 
       <main className="flex-1 overflow-y-auto pb-32">
-        <div className="mt-4">
+
+        <section>
           <h3 className="text-slate-900 dark:text-white text-lg font-bold px-6 pb-4 pt-2">Locutor Responsável</h3>
           <div className="flex flex-col gap-3 px-4">
             {[
@@ -50,24 +50,24 @@ export const AudioSettingsScreen: React.FC<Props> = ({ onBack }) => {
               { id: 'suave', name: 'Voz Suave', desc: 'Ideal para partidas relaxadas' }
             ].map((voice) => (
               <label key={voice.id} className={`group relative flex items-center gap-4 rounded-2xl p-4 transition-all cursor-pointer shadow-sm border ${selectedVoice === voice.id ? 'bg-primary/5 border-primary' : 'bg-white dark:bg-surface-dark border-gray-200 dark:border-white/5'}`}>
-                <input 
-                  type="radio" 
-                  name="voice" 
-                  checked={selectedVoice === voice.id} 
+                <input
+                  type="radio"
+                  name="voice"
+                  checked={selectedVoice === voice.id}
                   onChange={() => setSelectedVoice(voice.id)}
-                  className="h-6 w-6 border-2 border-slate-300 dark:border-slate-600 bg-transparent checked:border-primary checked:bg-primary transition-all focus:ring-0"
+                  className="hidden"
                 />
                 <div className="flex grow flex-col">
                   <p className="text-slate-900 dark:text-white text-base font-bold group-hover:text-primary transition-colors">{voice.name}</p>
                   <p className="text-slate-500 dark:text-slate-400 text-xs">{voice.desc}</p>
                 </div>
                 <button className={`flex items-center justify-center size-10 rounded-full transition-colors ${selectedVoice === voice.id ? 'bg-primary text-white' : 'bg-primary/10 text-primary'}`}>
-                  <span className="material-symbols-outlined filled text-xl" style={{fontVariationSettings: "'FILL' 1"}}>play_arrow</span>
+                  <span className="material-symbols-outlined filled text-xl" style={{ fontVariationSettings: "'FILL' 1" }}>play_arrow</span>
                 </button>
               </label>
             ))}
           </div>
-        </div>
+        </section>
 
         <div className="my-8 h-px w-full bg-gray-200 dark:bg-white/5 px-4"></div>
 
@@ -87,13 +87,13 @@ export const AudioSettingsScreen: React.FC<Props> = ({ onBack }) => {
                 </div>
                 <p className="text-sm font-black text-primary">{narrationVolume}%</p>
               </div>
-              <input 
-                type="range" 
+              <input
+                type="range"
                 min="0"
                 max="100"
                 value={narrationVolume}
                 onChange={(e) => setNarrationVolume(parseInt(e.target.value))}
-                className="w-full h-2 bg-gray-200 dark:bg-white/10 rounded-full appearance-none accent-primary cursor-pointer" 
+                className="w-full h-2 bg-gray-200 dark:bg-white/10 rounded-full appearance-none accent-primary cursor-pointer"
               />
             </div>
 
@@ -107,13 +107,13 @@ export const AudioSettingsScreen: React.FC<Props> = ({ onBack }) => {
                 </div>
                 <p className="text-sm font-black text-purple-500">{soundtrackVolume}%</p>
               </div>
-              <input 
-                type="range" 
+              <input
+                type="range"
                 min="0"
                 max="100"
                 value={soundtrackVolume}
                 onChange={(e) => setSoundtrackVolume(parseInt(e.target.value))}
-                className="w-full h-2 bg-gray-200 dark:bg-white/10 rounded-full appearance-none accent-purple-500 cursor-pointer" 
+                className="w-full h-2 bg-gray-200 dark:bg-white/10 rounded-full appearance-none accent-purple-500 cursor-pointer"
               />
             </div>
           </div>

@@ -21,22 +21,23 @@ export interface BingoRoom {
   status: 'lobby' | 'playing' | 'interval';
 }
 
-export type AppScreen = 
+export type AppScreen =
   | 'splash'
-  | 'login' 
-  | 'register' 
-  | 'home' 
-  | 'lobby' 
+  | 'login'
+  | 'register'
+  | 'home'
+  | 'lobby'
   | 'participant_lobby'
-  | 'game' 
-  | 'host_dashboard' 
-  | 'store' 
-  | 'ranking' 
-  | 'profile' 
-  | 'winners' 
+  | 'game'
+  | 'host_dashboard'
+  | 'store'
+  | 'ranking'
+  | 'profile'
+  | 'winners'
   | 'customization'
   | 'messages'
   | 'room_settings'
   | 'audio_settings'
   | 'rules_settings'
-  | 'chat';
+  | 'chat'
+  | 'edit_card';

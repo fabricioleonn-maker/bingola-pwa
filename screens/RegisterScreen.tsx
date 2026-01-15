@@ -1,5 +1,6 @@
 
 import React, { useState } from 'react';
+import { supabase } from '../lib/supabase';
 
 interface Props {
   onBack: () => void;
@@ -11,9 +12,10 @@ export const RegisterScreen: React.FC<Props> = ({ onBack, onComplete }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
@@ -33,34 +35,86 @@ export const RegisterScreen: React.FC<Props> = ({ onBack, onComplete }) => {
       return;
     }
 
-    // Tenta salvar o novo usuário
+    setLoading(true);
     try {
-      const savedUsers = JSON.parse(localStorage.getItem('bingola_users') || '[]');
+      // 0. Pre-validation: Check duplicates in profiles
+      // Note: This assumes profiles are public read or at least readable for uniqueness checks.
+      // If RLS blocks this, we might need a dedicated RPC or Edge Function, but let's try direct query first.
 
-      // Verificar se o e-mail já existe
-      if (savedUsers.some((u: any) => u.email.toLowerCase() === email.toLowerCase())) {
-        setError('Este e-mail já está sendo usado por outro jogador.');
+      const { data: existingUsers } = await supabase
+        .from('profiles')
+        .select('username')
+        .ilike('username', name);
+
+      if (existingUsers && existingUsers.length > 0) {
+        setError('Este nome de usuário já está em uso.');
+        setLoading(false);
         return;
       }
 
-      const newUser = {
-        id: Date.now().toString(),
-        name,
+      // Check email typically handled by Auth, but we can assume if they try to register,
+      // and we want a custom error, we rely on signUp error OR check profiles if we sync email there (we don't sync email to profiles yet, only username/bcoins).
+      // Wait, profiles table likely only has ID, username, bcoins. It might NOT have email.
+      // So checking email duplication via 'profiles' isn't possible unless we store email in profiles.
+      // However, supabase.auth.signUp usually throws "User already registered" error.
+      // If the user says it allows it, maybe they aren't seeing the error.
+      // I will trust standard Auth for email but catch it explicitly.
+
+      // 0b. Check duplicate email (in profiles)
+      // Since Auth might fake success for existing emails, we check our own records.
+      const { data: existingEmails } = await supabase
+        .from('profiles')
+        .select('email')
+        .ilike('email', email); // Use ilike for case-insensitive check
+
+      if (existingEmails && existingEmails.length > 0) {
+        setError('Este email já está cadastrado.');
+        setLoading(false);
+        return;
+      }
+
+      // 1. Sign up user
+      const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
-        createdAt: new Date().toISOString(),
-        bcoins: 100, // Saldo inicial
-        level: 1
-      };
+        options: {
+          data: {
+            username: name,
+            display_name: name
+          }
+        }
+      });
 
-      savedUsers.push(newUser);
-      localStorage.setItem('bingola_users', JSON.stringify(savedUsers));
+      if (authError) {
+        if (
+          authError.message.includes('registered') ||
+          authError.message.includes('already') ||
+          authError.message.includes('exists') ||
+          authError.status === 422
+        ) {
+          setError('Este email já está cadastrado.');
+        } else {
+          setError(authError.message);
+        }
+        setLoading(false);
+        return;
+      }
 
-      // Salva como usuário logado e prossegue
-      localStorage.setItem('bingola_current_user', JSON.stringify(newUser));
+      if (authData.user) {
+        console.log("User registered successfully:", authData.user.id);
+        // Profile creation is now automatically handled by the PostgreSQL Trigger 'on_auth_user_created'
+      }
+
+      const isConfirmationRequired = authData.session === null;
+      if (isConfirmationRequired) {
+        alert("Conta criada! Por favor, verifique sua caixa de entrada para confirmar seu e-mail antes de fazer login.");
+      }
+
       onComplete();
-    } catch (e) {
-      setError('Erro ao salvar dados. Verifique o armazenamento do navegador.');
+    } catch (e: any) {
+      setError(e.message || 'Erro ao criar conta. Tente novamente.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -165,9 +219,14 @@ export const RegisterScreen: React.FC<Props> = ({ onBack, onComplete }) => {
 
           <button
             type="submit"
-            className="w-full h-[66px] bg-gradient-to-r from-primary to-secondary text-white font-black text-lg rounded-[22px] shadow-xl shadow-primary/20 mt-6 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+            disabled={loading}
+            className={`w-full h-[66px] bg-gradient-to-r from-primary to-secondary text-white font-black text-lg rounded-[22px] shadow-xl shadow-primary/20 mt-6 active:scale-[0.98] transition-all flex items-center justify-center gap-2 ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
           >
-            Criar Minha Conta <span className="material-symbols-outlined">arrow_forward</span>
+            {loading ? (
+              <div className="w-6 h-6 border-3 border-white/30 border-t-white rounded-full animate-spin"></div>
+            ) : (
+              <>Criar Minha Conta <span className="material-symbols-outlined">arrow_forward</span></>
+            )}
           </button>
         </form>
 

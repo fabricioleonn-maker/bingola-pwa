@@ -1,5 +1,6 @@
 
 import React, { useState } from 'react';
+import { supabase } from '../lib/supabase';
 
 interface LoginProps {
   onLogin: () => void;
@@ -9,10 +10,11 @@ interface LoginProps {
 export const LoginScreen: React.FC<LoginProps> = ({ onLogin, onGoToRegister }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
 
@@ -21,28 +23,30 @@ export const LoginScreen: React.FC<LoginProps> = ({ onLogin, onGoToRegister }) =
       return;
     }
 
-    // Tenta carregar os usuários do LocalStorage
+    setLoading(true);
     try {
-      const savedUsers = JSON.parse(localStorage.getItem('bingola_users') || '[]');
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-      // Busca o usuário pelo e-mail
-      const user = savedUsers.find((u: any) => u.email.toLowerCase() === email.toLowerCase());
-
-      if (!user) {
-        setErrorMsg('Usuário não encontrado. Crie uma conta primeiro!');
+      if (error) {
+        if (error.message.includes('Invalid login credentials')) {
+          setErrorMsg('E-mail ou senha incorretos.');
+        } else if (error.message.includes('Email not confirmed')) {
+          setErrorMsg('E-mail pendente de confirmação.');
+        } else {
+          setErrorMsg(error.message);
+        }
         return;
       }
 
-      if (user.password !== password) {
-        setErrorMsg('Senha incorreta. Tente novamente.');
-        return;
-      }
-
-      // Sucesso! Salva quem está logado no momento
-      localStorage.setItem('bingola_current_user', JSON.stringify(user));
+      // Success! App.tsx will handle the session change
       onLogin();
     } catch (e) {
-      setErrorMsg('Erro ao acessar dados. Tente limpar o cache do navegador.');
+      setErrorMsg('Erro ao realizar login. Tente novamente.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -133,9 +137,14 @@ export const LoginScreen: React.FC<LoginProps> = ({ onLogin, onGoToRegister }) =
 
           <button
             type="submit"
-            className="w-full h-[60px] bg-gradient-to-r from-[#ff3d71] to-[#ff8c42] hover:brightness-110 text-white font-bold text-lg rounded-[20px] shadow-xl shadow-pink-500/20 transition-all transform active:scale-[0.98] mt-4"
+            disabled={loading}
+            className={`w-full h-[60px] bg-gradient-to-r from-[#ff3d71] to-[#ff8c42] hover:brightness-110 text-white font-bold text-lg rounded-[20px] shadow-xl shadow-pink-500/20 transition-all transform active:scale-[0.98] mt-4 flex items-center justify-center ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
           >
-            Iniciar sua sorte
+            {loading ? (
+              <div className="w-6 h-6 border-3 border-white/30 border-t-white rounded-full animate-spin"></div>
+            ) : (
+              'Iniciar sua sorte'
+            )}
           </button>
         </form>
 

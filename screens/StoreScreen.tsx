@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 
 interface Props {
   onBack: () => void;
@@ -7,37 +8,44 @@ interface Props {
 
 export const StoreScreen: React.FC<Props> = ({ onBack }) => {
   const [balance, setBalance] = useState(0);
+  const [profileId, setProfileId] = useState<string | null>(null);
 
   useEffect(() => {
-    const userJson = localStorage.getItem('bingola_current_user');
-    if (userJson) {
-      const user = JSON.parse(userJson);
-      setBalance(user.bcoins || 0);
-    }
+    const fetchBalance = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setProfileId(user.id);
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('bcoins')
+          .eq('id', user.id)
+          .single();
+        if (profile) setBalance(profile.bcoins || 0);
+      }
+    };
+    fetchBalance();
   }, []);
 
-  const buyPackage = (coins: number) => {
-    const userJson = localStorage.getItem('bingola_current_user');
-    if (userJson) {
-      const user = JSON.parse(userJson);
-      user.bcoins = (user.bcoins || 0) + coins;
-      localStorage.setItem('bingola_current_user', JSON.stringify(user));
-      setBalance(user.bcoins);
-
-      // Atualiza global
-      const usersJson = localStorage.getItem('bingola_users');
-      if (usersJson) {
-        const users = JSON.parse(usersJson);
-        const updatedUsers = users.map((u: any) => u.id === user.id ? user : u);
-        localStorage.setItem('bingola_users', JSON.stringify(updatedUsers));
-      }
-      
-      alert(`Você adquiriu ${coins} BCOINS com sucesso!`);
-    } else {
+  const buyPackage = async (coins: number) => {
+    if (!profileId) {
       // Caso explorador sem conta, permitimos "comprar" para testar o app
       const mockBalance = balance + coins;
       setBalance(mockBalance);
       alert("Simulação: Como você não está logado, adicionamos bcoins temporários para teste.");
+      return;
+    }
+
+    const newBalance = balance + coins;
+    const { error } = await supabase
+      .from('profiles')
+      .update({ bcoins: newBalance })
+      .eq('id', profileId);
+
+    if (error) {
+      alert("Erro ao processar compra. Tente novamente.");
+    } else {
+      setBalance(newBalance);
+      alert(`Você adquiriu ${coins} BCOINS com sucesso!`);
     }
   };
 
@@ -105,7 +113,7 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
                   </div>
                   <div className="flex flex-col gap-2">
                     <div className="bg-red-600 text-[9px] font-black text-white px-2 py-0.5 rounded-full text-center">{pkg.disc}</div>
-                    <button 
+                    <button
                       onClick={() => buyPackage(pkg.coins)}
                       className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-black active:scale-95 transition-transform"
                     >

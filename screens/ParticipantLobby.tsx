@@ -1,6 +1,8 @@
 
 import React, { useEffect, useState, useRef } from 'react';
+import { supabase } from '../lib/supabase';
 import { AppScreen } from '../types';
+import { useRoomStore } from '../state/roomStore';
 
 interface Props {
   onBack: () => void;
@@ -8,119 +10,243 @@ interface Props {
 }
 
 export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
-  const [pin, setPin] = useState('');
-  const [room, setRoom] = useState<any>(null);
-  const [isJoined, setIsJoined] = useState(false);
-  const [error, setError] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
+  const roomId = useRoomStore(s => s.roomId);
+  const room = useRoomStore(s => s.room);
+  const pending = useRoomStore(s => s.pending);
+  const accepted = useRoomStore(s => s.accepted);
+  const refreshParticipants = useRoomStore(s => s.refreshParticipants);
+
+  const [hostProfile, setHostProfile] = useState<any>(null);
+  const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
+  const [myStatus, setMyStatus] = useState<'pending' | 'accepted' | null>(null);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const navigatedToGameRef = useRef(false);
 
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('bingola_current_user') || '{}');
-    
-    // Watchdog: Verifica autorização baseada no PIN que o usuário digitou
-    const watchdog = setInterval(() => {
-       if (!pin || pin.length < 4) return;
+    if (!roomId) return;
 
-       const tableKey = `bingola_table_${pin}`;
-       const table = JSON.parse(localStorage.getItem(tableKey) || '[]');
-       const isAuthorized = table.some((p: any) => p.id === user.id);
+    refreshParticipants(roomId);
 
-       if (isAuthorized) {
-          clearInterval(watchdog);
-          onNavigate('game');
-       }
-    }, 1000);
-
-    return () => clearInterval(watchdog);
-  }, [pin]);
-
-  const handleJoin = () => {
-    setError('');
-    const active = JSON.parse(localStorage.getItem('bingola_active_room') || '{}');
-    // Em um cenário real, isso viria de um backend. No mock, verificamos a sala ativa no localStorage.
-    if (active.code === pin) {
-      const user = JSON.parse(localStorage.getItem('bingola_current_user') || '{}');
-      const reqs = JSON.parse(localStorage.getItem(`bingola_join_requests_${pin}`) || '[]');
-      if (!reqs.find((r: any) => r.id === user.id)) {
-        reqs.push({ 
-          id: user.id || Date.now().toString(), 
-          name: user.name || 'Visitante', 
-          avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100' 
+    const hydrateHost = async () => {
+      if (room?.host_id) {
+        const { data: profile } = await supabase.from('profiles').select('*').eq('id', room.host_id).single();
+        if (profile) setHostProfile({
+          id: profile.id,
+          name: profile.username,
+          avatar: profile.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100',
+          isHost: true,
+          level: profile.level,
+          bcoins: profile.bcoins
         });
-        localStorage.setItem(`bingola_join_requests_${pin}`, JSON.stringify(reqs));
       }
-      setRoom(active);
-      setIsJoined(true);
-    } else {
-      setError('Mesa não encontrada. Verifique o código.');
+    };
+
+    const checkMyStatus = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user && roomId) {
+        setCurrentUser(user);
+        const { data: part } = await supabase.from('participants').select('status').eq('room_id', roomId).eq('user_id', user.id).maybeSingle();
+        if (part) setMyStatus(part.status);
+      }
+    };
+
+    hydrateHost();
+    checkMyStatus();
+  }, [roomId, room?.host_id, refreshParticipants]);
+
+  // Sync my status from accepted/pending lists
+  useEffect(() => {
+    if (!currentUser) return;
+    const isAccepted = accepted.some(p => p.user_id === currentUser.id);
+    const isPending = pending.some(p => p.user_id === currentUser.id);
+    if (isAccepted) setMyStatus('accepted');
+    else if (isPending) setMyStatus('pending');
+  }, [accepted, pending, currentUser]);
+
+  // Immediate navigation via Realtime Broadcast
+  useEffect(() => {
+    if (!roomId) return;
+
+    const channel = useRoomStore.getState().channel;
+    if (!channel) return;
+
+    const sub = channel.on('broadcast', { event: 'game_started' }, (payload) => {
+      if (payload.roomId === roomId && !navigatedToGameRef.current) {
+        navigatedToGameRef.current = true;
+        onNavigate('game');
+      }
+    });
+
+    // Safe cleanup not strictly required as channel is managed by store, 
+    // and off() might not be available or stable on the proxy object.
+    return () => {
+      try {
+        if (channel && typeof (channel as any).off === 'function') {
+          (channel as any).off('broadcast', { event: 'game_started' });
+        }
+      } catch (err) { console.warn("Failed to detach listener", err); }
+    };
+  }, [roomId, onNavigate]);
+
+  // Fallback navigation via DB poll
+  useEffect(() => {
+    if (room?.status === 'playing' && !navigatedToGameRef.current) {
+      navigatedToGameRef.current = true;
+      onNavigate('game');
     }
-  };
+  }, [room?.status, onNavigate]);
 
-  const handleBoxClick = () => {
-    inputRef.current?.focus();
-  };
+  if (!room || !myStatus) return (
+    <div className="flex flex-col items-center justify-center min-h-screen bg-background-dark text-white/50 space-y-4">
+      <div className="size-16 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+      <p className="font-black italic animate-pulse">Sincronizando Mesa...</p>
+      <button onClick={onBack} className="text-xs underline mt-8">Voltar para Home</button>
+    </div>
+  );
 
-  if (!isJoined) {
-    return (
-      <div className="flex flex-col min-h-screen bg-background-dark font-display text-white p-6 justify-center">
-        <div className="text-center mb-10">
-          <div className="size-20 bg-primary/20 rounded-3xl flex items-center justify-center text-primary mx-auto mb-6 border border-primary/30">
-            <span className="material-symbols-outlined text-4xl">vpn_key</span>
-          </div>
-          <h2 className="text-3xl font-black italic mb-2">Entrar na Mesa</h2>
-          <p className="text-white/40 text-sm">Insira o código de 4 dígitos do anfitrião.</p>
-        </div>
-        
-        <div className="space-y-8 max-w-xs mx-auto w-full relative">
-          <div className="flex justify-between gap-3 cursor-pointer" onClick={handleBoxClick}>
-             {[0,1,2,3].map(i => (
-               <div key={i} className={`flex-1 h-20 bg-white/5 border-2 rounded-2xl flex items-center justify-center text-4xl font-black transition-all ${pin.length === i ? 'border-primary shadow-[0_0_20px_rgba(255,61,113,0.3)] bg-primary/5' : 'border-white/10'}`}>
-                 {pin[i] || ""}
-                 {!pin[i] && <div className="w-2 h-2 bg-white/20 rounded-full"></div>}
-               </div>
-             ))}
-          </div>
-          
-          <input 
-            ref={inputRef}
-            type="tel" 
-            pattern="[0-9]*"
-            maxLength={4}
-            value={pin}
-            onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, '').slice(0, 4))}
-            className="absolute top-0 left-0 w-full h-20 opacity-0 cursor-default"
-            style={{ fontSize: '16px' }}
-          />
-          
-          <div className="grid grid-cols-1 gap-4">
-             {error && <p className="text-red-500 text-[10px] font-black uppercase text-center animate-bounce">{error}</p>}
-             <button onClick={handleJoin} disabled={pin.length < 4} className={`w-full h-16 font-black rounded-2xl shadow-xl transition-all ${pin.length === 4 ? 'bg-primary text-white scale-100 shadow-primary/30' : 'bg-white/5 text-white/20 scale-95 cursor-not-allowed'}`}>PEDIR ENTRADA</button>
-             <button onClick={onBack} className="w-full py-4 text-white/20 font-bold text-xs uppercase tracking-widest">Voltar ao Menu</button>
-          </div>
-        </div>
+  if (myStatus === 'pending') return (
+    <div className="flex flex-col items-center justify-center min-h-screen bg-background-dark text-white p-8 text-center space-y-8">
+      <div className="size-32 bg-primary/10 rounded-[3rem] flex items-center justify-center animate-pulse">
+        <span className="material-symbols-outlined text- primary text-6xl">pending_actions</span>
       </div>
-    );
-  }
+      <div className="space-y-4">
+        <h2 className="text-3xl font-black italic uppercase tracking-tighter">Aguardando Aprovação</h2>
+        <p className="text-white/50 text-sm leading-relaxed">Sua solicitação foi enviada. O anfitrião precisa autorizar sua entrada na mesa.</p>
+      </div>
+      <div className="w-full max-w-xs bg-white/5 p-6 rounded-3xl border border-white/10">
+        <p className="text-[10px] font-black opacity-30 uppercase tracking-widest mb-1">Mesa Selecionada</p>
+        <p className="font-black text-primary text-xl uppercase">{room.name}</p>
+        <p className="text-white/40 font-bold mt-1 tracking-widest text-[10px]">CÓD MESA: {room.code}</p>
+      </div>
+      <button onClick={onBack} className="bg-white/5 hover:bg-white/10 text-white/40 px-8 py-4 rounded-2xl font-black text-xs uppercase transition-all">Cancelar Solicitação</button>
+    </div>
+  );
 
   return (
-    <div className="flex flex-col min-h-screen bg-background-dark font-display text-white">
-      <header className="p-4 border-b border-white/5 bg-background-dark/80 backdrop-blur-md">
-        <div className="flex items-center gap-3">
-          <div className="size-10 rounded-xl bg-primary/20 flex items-center justify-center text-primary"><span className="material-symbols-outlined">casino</span></div>
-          <div>
-            <h1 className="text-sm font-bold">{room?.name}</h1>
-            <p className="text-[10px] font-black text-white/40 uppercase">Aguardando Autorização...</p>
+    <div className="flex flex-col min-h-screen bg-background-dark font-display text-white relative">
+      <header className="sticky top-0 z-40 flex items-center bg-background-dark/90 backdrop-blur-md p-4 justify-between border-b border-white/5">
+        <button onClick={onBack} className="text-white flex size-12 items-center justify-start">
+          <span className="material-symbols-outlined">arrow_back</span>
+        </button>
+        <div className="text-center flex-1">
+          <h2 className="text-[10px] font-black uppercase tracking-widest opacity-40 italic">CÓD MESA: {room.code}</h2>
+          <p className="text-lg font-black text-primary truncate leading-tight uppercase italic">{room.name}</p>
+        </div>
+        <button onClick={() => onNavigate('customization')} className="flex flex-col items-center gap-1 text-primary">
+          <span className="material-symbols-outlined text-2xl">palette</span>
+          <span className="text-[8px] font-black uppercase italic tracking-tighter leading-none">Cor da Sorte</span>
+        </button>
+      </header>
+
+      <main className="flex-1 overflow-y-auto pb-6">
+        <section className="flex flex-col items-center pt-8 px-6 mb-8">
+          <div className="bg-white/10 border border-white/10 p-8 rounded-[2.5rem] w-full flex flex-col items-center shadow-2xl relative overflow-hidden backdrop-blur-xl">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 blur-3xl -mr-16 -mt-16 animate-pulse"></div>
+            <p className="text-white/40 text-[10px] font-black uppercase tracking-[0.3em] mb-4">Prêmios da Mesa</p>
+
+            <div className="grid grid-cols-2 gap-3 w-full">
+              {(() => {
+                const patterns = (room as any).winning_patterns;
+                const list = [];
+                if (!patterns || (typeof patterns === 'object' && Object.values(patterns).every(v => v === false))) {
+                  list.push({ label: 'Cartela Cheia', icon: 'auto_awesome' });
+                } else if (Array.isArray(patterns)) {
+                  patterns.forEach(p => list.push({ label: p, icon: 'verified' }));
+                } else if (typeof patterns === 'object') {
+                  if (patterns.cheia) list.push({ label: 'Cartela Cheia', icon: 'auto_awesome' });
+                  if (patterns.cinquina) list.push({ label: 'Cinquina', icon: 'filter_5' });
+                  if (patterns.cantos) list.push({ label: 'Cantos', icon: 'grid_view' });
+                  if (patterns.x) list.push({ label: 'Cartela em X', icon: 'close' });
+                }
+
+                const potRaw = (room as any)?.prize_pool || (room as any)?.prizePool || (room as any)?.prize_pot || (room as any)?.bpoints || 0;
+                const pot = Number(potRaw);
+
+                return list.map((p, i) => (
+                  <div key={i} className="bg-white/5 border border-white/10 p-4 rounded-3xl flex flex-col items-center text-center">
+                    <span className="material-symbols-outlined text-primary mb-1 text-2xl">{p.icon}</span>
+                    <span className="text-[9px] font-black uppercase text-white tracking-widest leading-none mb-1">{p.label}</span>
+                    <p className="text-green-500 font-black text-[11px] leading-none">
+                      B$ {p.label === 'Cartela Cheia' ? Math.floor(pot * 0.7) : Math.floor(pot * 0.3)}
+                    </p>
+                  </div>
+                ));
+              })()}
+            </div>
+          </div>
+        </section>
+
+        <section className="px-6 space-y-6">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xl font-black italic">Jogadores na Mesa</h3>
+            <span className="bg-white/5 text-white/40 text-[10px] font-black px-3 py-1 rounded-full uppercase">
+              {accepted.length + (room.host_id ? 1 : 0)} / {room.player_limit || 20}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-4 gap-6">
+            {hostProfile && (
+              <div className="flex flex-col items-center gap-2" onClick={() => setSelectedPlayer(hostProfile)}>
+                <div className="relative p-0.5 rounded-full border-2 border-primary">
+                  <div className="size-14 rounded-full overflow-hidden">
+                    <img src={hostProfile.avatar} className="w-full h-full object-cover" />
+                  </div>
+                  <div className="absolute -top-1 -right-1 bg-yellow-500 text-black size-5 rounded-full flex items-center justify-center border-2 border-background-dark">
+                    <span className="material-symbols-outlined text-[10px] font-black">crown</span>
+                  </div>
+                </div>
+                <span className="text-[10px] font-bold text-white/60 truncate w-full text-center">{hostProfile.name}</span>
+              </div>
+            )}
+            {accepted.map((p, i) => {
+              const profile = p.profiles;
+              return (
+                <div key={i} className="flex flex-col items-center gap-2" onClick={() => setSelectedPlayer({
+                  name: profile?.username || 'Jogador',
+                  avatar: profile?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100',
+                  level: profile?.level,
+                  bcoins: profile?.bcoins
+                })}>
+                  <div className="relative p-0.5 rounded-full border-2 border-white/10">
+                    <div className="size-14 rounded-full overflow-hidden">
+                      <img src={profile?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100'} className="w-full h-full object-cover" />
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold text-white/60 truncate w-full text-center">{profile?.username || 'Jogador'}</span>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+
+        <div className="mt-12 px-8 text-center space-y-4">
+          <div className="animate-bounce">
+            <span className="material-symbols-outlined text-5xl text-primary opacity-50">hourglass_empty</span>
+          </div>
+          <p className="text-xl font-black italic">Aguardando Anfitrião...</p>
+          <p className="text-xs text-white/40 leading-relaxed px-4">O jogo começará instantaneamente assim que todos estiverem prontos!</p>
+        </div>
+      </main>
+
+      <footer className="fixed bottom-0 left-0 right-0 p-4 bg-background-dark/80 backdrop-blur-md border-t border-white/5 z-30 flex items-center justify-center">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-black text-white/20 uppercase tracking-[0.2em]">CÓDIGO DA MESA:</span>
+          <span className="text-primary font-black text-lg tracking-widest">{room.code}</span>
+        </div>
+      </footer>
+
+      {selectedPlayer && (
+        <div className="fixed inset-0 z-[110] bg-black/90 backdrop-blur-md flex items-center justify-center p-6" onClick={() => setSelectedPlayer(null)}>
+          <div className="bg-surface-dark border border-white/10 p-8 rounded-[3rem] w-full max-w-sm text-center shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="size-24 rounded-full border-4 border-primary/20 mx-auto mb-6 p-1">
+              <img src={selectedPlayer.avatar} className="size-full rounded-full object-cover" />
+            </div>
+            <h3 className="text-2xl font-black italic mb-1">{selectedPlayer.name}</h3>
+            <p className="text-[10px] font-black text-primary uppercase tracking-[0.3em] mb-8">Nível {selectedPlayer.level || 1} • {selectedPlayer.bcoins || 0} BCOINS</p>
+            <button onClick={() => setSelectedPlayer(null)} className="w-full h-16 bg-primary text-white font-black rounded-2xl">FECHAR</button>
           </div>
         </div>
-      </header>
-      <main className="flex-1 flex flex-col items-center px-6 pt-32 text-center">
-        <div className="size-24 rounded-full border-4 border-primary/20 flex items-center justify-center mb-8 bg-white/5 animate-pulse shadow-[0_0_30px_rgba(255,61,113,0.2)]">
-          <span className="material-symbols-outlined text-4xl text-primary">hourglass_empty</span>
-        </div>
-        <h2 className="text-3xl font-black mb-2 italic">Na fila de espera!</h2>
-        <p className="text-sm text-white/40 mb-12">O anfitrião recebeu seu pedido para a mesa <span className="text-primary font-bold">{pin}</span>. Você entrará automaticamente assim que for aceito.</p>
-        <button onClick={onBack} className="bg-white/5 px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest border border-white/10">Voltar ao Menu</button>
-      </main>
+      )}
     </div>
   );
 };
