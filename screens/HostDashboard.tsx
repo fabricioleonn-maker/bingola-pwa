@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { AppScreen } from '../types';
 import { useRoomStore } from '../state/roomStore';
+import MusicPlayerPanel from '../components/MusicPlayerPanel';
 
 interface Props {
   onBack: () => void;
@@ -214,7 +215,7 @@ export const HostDashboard: React.FC<Props> = ({ onBack, onPublish, onNavigate }
         </div>
       </header>
 
-      <main className="flex-1 p-6 space-y-8 pb-32 overflow-y-auto">
+      <main id="host-config-section" className="flex-1 p-6 space-y-8 pb-32 overflow-y-auto">
         <section className="space-y-3">
           <h3 className="text-[10px] font-black uppercase tracking-widest text-primary/60 text-center">Nome da Mesa</h3>
           <input
@@ -228,7 +229,7 @@ export const HostDashboard: React.FC<Props> = ({ onBack, onPublish, onNavigate }
         <section className="space-y-4">
           <h3 className="text-[10px] font-black uppercase tracking-widest text-primary/60 text-center">Vagas e Rodadas</h3>
           <div className="grid grid-cols-2 gap-6">
-            <div className="space-y-3">
+            <div id="config-slots-container" className="space-y-3">
               <label className="text-[9px] font-bold text-white/30 tracking-[0.2em] text-center block uppercase">Vagas na Mesa</label>
               <div className="flex items-center justify-between bg-white/[0.03] rounded-3xl p-1">
                 <button onClick={() => adjustValue(setPlayerLimit, playerLimit, -1, 1)} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/5 transition-colors">
@@ -246,7 +247,7 @@ export const HostDashboard: React.FC<Props> = ({ onBack, onPublish, onNavigate }
                 </button>
               </div>
             </div>
-            <div className="space-y-3">
+            <div id="config-rounds-container" className="space-y-3">
               <label className="text-[9px] font-bold text-white/30 tracking-[0.2em] text-center block uppercase">Total de Rodadas</label>
               <div className="flex items-center justify-between bg-white/[0.03] rounded-3xl p-1">
                 <button onClick={() => adjustValue(setRounds, rounds, -1, 1)} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/5 transition-colors">
@@ -267,7 +268,7 @@ export const HostDashboard: React.FC<Props> = ({ onBack, onPublish, onNavigate }
           </div>
         </section>
 
-        <section className="space-y-4">
+        <section id="config-bpoints-container" className="space-y-4">
           <h3 className="text-[10px] font-black uppercase tracking-widest text-green-500/60 text-center">Premiação BPOINTS (Dinheiro Fictício)</h3>
           <div className="bg-white/[0.03] rounded-[2.5rem] border border-white/5 p-6 flex items-center justify-between group focus-within:border-green-500/20 transition-all">
             <button onClick={() => adjustValue(setBpoints, bpoints, -50, 0)} className="w-12 h-12 flex items-center justify-center rounded-full hover:bg-white/5 transition-colors">
@@ -349,6 +350,7 @@ export const HostDashboard: React.FC<Props> = ({ onBack, onPublish, onNavigate }
           </div>
         </section>
 
+
         <div className="bg-primary/5 border border-primary/20 rounded-[2.5rem] p-8 flex flex-col items-center gap-1 text-center">
           <p className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em] mb-1">Custo de Abertura</p>
           <div className="flex items-center gap-2">
@@ -364,6 +366,7 @@ export const HostDashboard: React.FC<Props> = ({ onBack, onPublish, onNavigate }
 
       <footer className="fixed bottom-0 left-0 right-0 p-6 bg-background-dark/95 border-t border-white/5 backdrop-blur-md">
         <button
+          id="open-mesa-btn"
           onClick={handlePublish}
           disabled={isPublishing}
           className="w-full h-20 bg-primary text-white font-black text-xl rounded-3xl shadow-2xl transition-all active:scale-95"

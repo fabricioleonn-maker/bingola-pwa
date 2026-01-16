@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAudioStore } from '../state/audioStore';
 
 interface LoginProps {
   onLogin: () => void;
@@ -42,6 +43,7 @@ export const LoginScreen: React.FC<LoginProps> = ({ onLogin, onGoToRegister }) =
       }
 
       // Success! App.tsx will handle the session change
+      useAudioStore.getState().playIntro();
       onLogin();
     } catch (e) {
       setErrorMsg('Erro ao realizar login. Tente novamente.');

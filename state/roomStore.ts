@@ -149,6 +149,7 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
   },
 
   bootstrap: async (roomId) => {
+    if (roomId === 'tutorial-mock') return;
     set({ lastError: null });
 
     const { data: room, error: roomErr } = await supabase
@@ -177,6 +178,7 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
   },
 
   refreshParticipants: async (roomId) => {
+    if (roomId === 'tutorial-mock') return;
     // 1. Participantes
     const { data, error } = await supabase
       .from('participants')
@@ -229,6 +231,7 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
   },
 
   subscribe: (roomId) => {
+    if (roomId === 'tutorial-mock') return () => { };
     // garante 1 canal por vez
     get()._cleanupSubscription();
 

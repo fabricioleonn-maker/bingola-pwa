@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { AppScreen } from '../types';
 import { useRoomStore } from '../state/roomStore';
 import { clearBingolaLocalState } from '../state/persist';
+import { useTutorialStore } from '../state/tutorialStore';
 
 interface HomeProps {
   onNavigate: (screen: AppScreen) => void;
@@ -11,6 +12,7 @@ interface HomeProps {
 export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
   const [userName, setUserName] = useState('Explorador');
   const [balance, setBalance] = useState(0);
+  const [profileAvatar, setProfileAvatar] = useState<string | null>(null);
   // State derived from Store (removed local state for these)
   const hasActiveRoom = !!useRoomStore((s) => s.roomId);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -62,6 +64,7 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
         if (profile) {
           setUserName((profile as any).username || 'Usuário');
           setBalance((profile as any).bcoins || 0);
+          setProfileAvatar((profile as any).avatar_url || null);
         }
       }
     };
@@ -69,6 +72,12 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
     fetchProfile();
 
     // State sync removed - relying on Store directly
+
+    // Auto-start tutorial if never seen
+    const { isActive, hasSeenTutorial, startTutorial } = useTutorialStore.getState();
+    if (!hasSeenTutorial && !isActive) {
+      setTimeout(() => startTutorial(), 2000); // Small delay for splash to end
+    }
   }, [roomId]);
 
   // Derive HUD state from Store
@@ -200,9 +209,23 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
             <span className="text-[12px] font-black text-white">{balance} BCOINS</span>
           </div>
         </div>
-        <div className="cursor-pointer" onClick={() => onNavigate('profile')}>
-          <div className="w-12 h-12 rounded-full border-2 border-primary/20 p-0.5">
-            <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=100&auto=format&fit=crop" className="w-full h-full rounded-full object-cover" alt="Profile" />
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => useTutorialStore.getState().startTutorial()}
+            className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-white/40 hover:text-primary transition-colors"
+          >
+            <span className="material-symbols-outlined text-xl">help</span>
+          </button>
+          <div id="personalize-btn" className="cursor-pointer" onClick={() => onNavigate('profile')}>
+            <div className="w-12 h-12 rounded-full border-2 border-primary/20 p-0.5 overflow-hidden">
+              {profileAvatar ? (
+                <img src={profileAvatar} className="w-full h-full rounded-full object-cover" alt="Profile" />
+              ) : (
+                <div className="w-full h-full rounded-full bg-white/5 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-white/20 text-xl">person</span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>
@@ -255,6 +278,7 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
 
           {/* 2. Create New Room (Blocked if active) */}
           <button
+            id="create-room-btn"
             onClick={() => {
               if (hasActiveRoom) {
                 alert("Você já está em uma mesa ativa! Saia dela primeiro ou clique em 'Abrir Lobby'.");
@@ -273,6 +297,7 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
 
           {/* 3. Join Room (Blocked if active) */}
           <button
+            id="join-personalize-section"
             onClick={() => {
               if (hasActiveRoom) {
                 alert("Você já está em uma mesa ativa! Saia dela primeiro ou clique em 'Abrir Lobby'.");
@@ -306,6 +331,7 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
                 value={joinCode}
                 onChange={(e) => setJoinCode(e.target.value.replace(/\D/g, ''))}
                 placeholder="0000"
+                id="join-code-input"
                 className="w-full h-20 bg-white/5 border border-white/10 rounded-2xl text-center text-4xl font-black tracking-[0.5em] text-primary focus:border-primary/50 focus:ring-0 transition-all mb-8 placeholder:opacity-10"
                 autoFocus
               />

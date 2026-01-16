@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAudioStore } from '../state/audioStore';
 
 interface Props {
   onBack: () => void;
@@ -110,6 +111,7 @@ export const RegisterScreen: React.FC<Props> = ({ onBack, onComplete }) => {
         alert("Conta criada! Por favor, verifique sua caixa de entrada para confirmar seu e-mail antes de fazer login.");
       }
 
+      useAudioStore.getState().playIntro();
       onComplete();
     } catch (e: any) {
       setError(e.message || 'Erro ao criar conta. Tente novamente.');

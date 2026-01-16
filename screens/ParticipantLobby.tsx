@@ -165,7 +165,7 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
           <h2 className="text-[10px] font-black uppercase tracking-widest opacity-40 italic">CÓD MESA: {room.code}</h2>
           <p className="text-lg font-black text-primary truncate leading-tight uppercase italic">{room.name}</p>
         </div>
-        <button onClick={() => onNavigate('customization')} className="flex flex-col items-center gap-1 text-primary">
+        <button id="lobby-personalize-btn" onClick={() => onNavigate('customization')} className="flex flex-col items-center gap-1 text-primary">
           <span className="material-symbols-outlined text-2xl">palette</span>
           <span className="text-[8px] font-black uppercase italic tracking-tighter leading-none">Cor da Sorte</span>
         </button>
@@ -273,6 +273,24 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
             </div>
             <h3 className="text-2xl font-black italic mb-1">{selectedPlayer.name}</h3>
             <p className="text-[10px] font-black text-primary uppercase tracking-[0.3em] mb-8">Nível {selectedPlayer.level || 1} • {selectedPlayer.bcoins || 0} BCOINS</p>
+
+            <div className="flex flex-col gap-3 mb-8">
+              <button
+                onClick={(e) => { e.stopPropagation(); alert('Em breve: Sistema de Chat'); }}
+                className="w-full h-14 bg-white/5 text-white font-black rounded-2xl flex items-center justify-center gap-2 border border-white/5 active:scale-95 transition-all"
+              >
+                <span className="material-symbols-outlined text-primary">chat</span>
+                ENVIAR MENSAGEM
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); alert('Em breve: Adicionar Amigo'); }}
+                className="w-full h-14 bg-white/5 text-white font-black rounded-2xl flex items-center justify-center gap-2 border border-white/5 active:scale-95 transition-all"
+              >
+                <span className="material-symbols-outlined text-primary">person_add</span>
+                ADICIONAR AMIGO
+              </button>
+            </div>
+
             <button onClick={() => setSelectedPlayer(null)} className="w-full h-16 bg-primary text-white font-black rounded-2xl">FECHAR</button>
           </div>
         </div>

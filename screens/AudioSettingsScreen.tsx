@@ -1,5 +1,6 @@
-
 import React, { useState, useEffect } from 'react';
+import { useAudioStore } from '../state/audioStore';
+import MusicPlayerPanel from '../components/MusicPlayerPanel';
 
 interface Props {
   onBack: () => void;
@@ -8,7 +9,7 @@ interface Props {
 export const AudioSettingsScreen: React.FC<Props> = ({ onBack }) => {
   const [selectedVoice, setSelectedVoice] = useState('vovo');
   const [narrationVolume, setNarrationVolume] = useState(80);
-  const [soundtrackVolume, setSoundtrackVolume] = useState(40);
+  const { isMuted, volume, toggleMute, setVolume } = useAudioStore();
   useEffect(() => {
     const savedSettings = localStorage.getItem('bingola_game_settings');
     if (savedSettings) {
@@ -16,7 +17,6 @@ export const AudioSettingsScreen: React.FC<Props> = ({ onBack }) => {
         const settings = JSON.parse(savedSettings);
         setSelectedVoice(settings.selectedVoice || 'vovo');
         setNarrationVolume(settings.narrationVolume ?? 80);
-        setSoundtrackVolume(settings.soundtrackVolume ?? 40);
       } catch (e) {
         console.error("Erro ao carregar configurações");
       }
@@ -25,7 +25,7 @@ export const AudioSettingsScreen: React.FC<Props> = ({ onBack }) => {
 
   const handleSave = () => {
     const currentSettings = JSON.parse(localStorage.getItem('bingola_game_settings') || '{}');
-    const newSettings = { ...currentSettings, selectedVoice, narrationVolume, soundtrackVolume };
+    const newSettings = { ...currentSettings, selectedVoice, narrationVolume };
     localStorage.setItem('bingola_game_settings', JSON.stringify(newSettings));
     onBack();
   };
@@ -73,8 +73,8 @@ export const AudioSettingsScreen: React.FC<Props> = ({ onBack }) => {
 
         <section>
           <div className="px-6 flex items-center justify-between pb-4">
-            <h3 className="text-slate-900 dark:text-white text-lg font-bold">Mixagem</h3>
-            <span className="material-symbols-outlined text-primary">equalizer</span>
+            <h3 className="text-slate-900 dark:text-white text-lg font-bold">Gerenciador de Som</h3>
+            <span className="material-symbols-outlined text-primary">analytics</span>
           </div>
           <div className="px-4 space-y-4">
             <div className="bg-white dark:bg-surface-dark rounded-3xl p-6 border border-gray-200 dark:border-white/5 shadow-sm">
@@ -97,25 +97,7 @@ export const AudioSettingsScreen: React.FC<Props> = ({ onBack }) => {
               />
             </div>
 
-            <div className="bg-white dark:bg-surface-dark rounded-3xl p-6 border border-gray-200 dark:border-white/5 shadow-sm">
-              <div className="flex justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center">
-                    <span className="material-symbols-outlined text-purple-500 text-lg">music_note</span>
-                  </div>
-                  <p className="font-bold text-sm">Trilha Sonora</p>
-                </div>
-                <p className="text-sm font-black text-purple-500">{soundtrackVolume}%</p>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={soundtrackVolume}
-                onChange={(e) => setSoundtrackVolume(parseInt(e.target.value))}
-                className="w-full h-2 bg-gray-200 dark:bg-white/10 rounded-full appearance-none accent-purple-500 cursor-pointer"
-              />
-            </div>
+            <MusicPlayerPanel />
           </div>
         </section>
       </main>

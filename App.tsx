@@ -23,9 +23,13 @@ import { AppScreen } from './types';
 import { useRoomStore } from './state/roomStore';
 import { useRoomSession } from './state/useRoomSession';
 import { readPersistedRoomId, canAutoResume, setNoResume, clearBingolaLocalState } from './state/persist';
+import { useTutorialStore } from './state/tutorialStore';
 import { NotificationToast } from './components/NotificationToast';
 
 import { PersistentGameLoop } from './components/PersistentGameLoop';
+import BackgroundMusic from './components/BackgroundMusic';
+import GlobalMusicHeader from './components/GlobalMusicHeader';
+import TutorialOverlay from './components/TutorialOverlay';
 
 const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>('splash');
@@ -94,6 +98,10 @@ const App: React.FC = () => {
     const myToken = runTokenRef.current;
 
     const run = async () => {
+      // 0. Tutorial Bypass: Don't interfere if tutorial is active or mock room is set
+      const tutorialActive = useTutorialStore.getState().isActive;
+      if (tutorialActive || roomId === 'tutorial-mock') return;
+
       // Small delay to allow consecutive state updates to settle
       await new Promise(r => setTimeout(r, 500));
       if (cancelled || myToken !== runTokenRef.current) return;
@@ -109,7 +117,7 @@ const App: React.FC = () => {
           .maybeSingle();
 
         if (!currentRoom || currentRoom.status === 'finished') {
-          console.log("App Watchdog: Room finished or not found. Clearing state.");
+          console.log(`[Watchdog] Room ${roomId} invalid or finished. Cleanup triggered.`);
           clearBingolaLocalState();
           setRoomId(null);
           setCurrentScreen('home');
@@ -209,7 +217,9 @@ const App: React.FC = () => {
 
       // Cleanup if no active room found 
       console.log("App Watchdog: No active participation found. Cleaning up.");
-      if (roomId || currentScreen === 'splash' || currentScreen === 'lobby' || currentScreen === 'participant_lobby' || currentScreen === 'game') {
+      // 6. Cleanup if no active room found but we are in a room screen
+      if ((roomId || currentScreen === 'lobby' || currentScreen === 'participant_lobby' || currentScreen === 'game') && !tutorialActive) {
+        console.log(`[Watchdog] Final fallback cleanup. roomId=${roomId}, screen=${currentScreen}`);
         clearBingolaLocalState();
         setRoomId(null);
         setCurrentScreen('home');
@@ -290,6 +300,9 @@ const App: React.FC = () => {
       <div className="max-w-[430px] mx-auto min-h-screen relative shadow-2xl">
         <NotificationToast />
         <PersistentGameLoop />
+        <BackgroundMusic currentScreen={currentScreen} />
+        <GlobalMusicHeader currentScreen={currentScreen} />
+        <TutorialOverlay onNavigate={setCurrentScreen} />
         {renderScreen()}
       </div>
     </div>

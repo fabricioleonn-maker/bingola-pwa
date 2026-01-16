@@ -170,10 +170,10 @@ export const LobbyScreen: React.FC<Props> = ({ onBack, onStart, onNavigate }) =>
           <span className="material-symbols-outlined">arrow_back</span>
         </button>
         <div className="text-center flex-1">
-          <h2 className="text-[10px] font-black uppercase tracking-widest opacity-40 italic">CÓD MESA: {room.code}</h2>
+          <h2 id="room-code-display" className="text-[10px] font-black uppercase tracking-widest opacity-40 italic">CÓD MESA: {room.code}</h2>
           <p className="text-lg font-black text-primary truncate leading-tight uppercase italic">{room.name}</p>
         </div>
-        <button onClick={() => onNavigate('room_settings')} className="flex size-12 items-center justify-end text-primary">
+        <button id="settings-gear-btn" onClick={() => onNavigate('room_settings')} className="flex size-12 items-center justify-end text-primary">
           <span className="material-symbols-outlined">settings</span>
         </button>
       </header>
@@ -318,6 +318,23 @@ export const LobbyScreen: React.FC<Props> = ({ onBack, onStart, onNavigate }) =>
                 <p className="text-[8px] font-black text-white/40 uppercase">Vitórias</p>
                 <p className="font-bold">8</p>
               </div>
+            </div>
+
+            <div className="flex flex-col gap-3 mb-8">
+              <button
+                onClick={(e) => { e.stopPropagation(); alert('Em breve: Sistema de Chat'); }}
+                className="w-full h-14 bg-white/5 text-white font-black rounded-2xl flex items-center justify-center gap-2 border border-white/5 active:scale-95 transition-all"
+              >
+                <span className="material-symbols-outlined text-primary">chat</span>
+                ENVIAR MENSAGEM
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); alert('Em breve: Adicionar Amigo'); }}
+                className="w-full h-14 bg-white/5 text-white font-black rounded-2xl flex items-center justify-center gap-2 border border-white/5 active:scale-95 transition-all"
+              >
+                <span className="material-symbols-outlined text-primary">person_add</span>
+                ADICIONAR AMIGO
+              </button>
             </div>
 
             {/* Kick Button (Host Only) */}

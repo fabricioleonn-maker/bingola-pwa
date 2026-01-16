@@ -6,6 +6,8 @@ interface Props {
 }
 
 export const RankingScreen: React.FC<Props> = ({ onBack }) => {
+  const [activeTab, setActiveTab] = React.useState<'friends' | 'global'>('global');
+
   const players = [
     { rank: 4, name: 'Ana Beatriz', level: 38, pts: '65.200', online: false },
     { rank: 5, name: 'Ricardo Lima', level: 41, pts: '58.900', online: true },
@@ -19,7 +21,7 @@ export const RankingScreen: React.FC<Props> = ({ onBack }) => {
         <button onClick={onBack} className="w-10 h-10 flex items-center justify-center text-white">
           <span className="material-symbols-outlined">arrow_back_ios</span>
         </button>
-        <h2 className="text-lg font-bold">Ranking Global</h2>
+        <h2 className="text-lg font-bold">{activeTab === 'global' ? 'Ranking Global' : 'Ranking Amigos'}</h2>
         <button className="w-10 h-10 flex items-center justify-center text-primary">
           <span className="material-symbols-outlined">workspace_premium</span>
         </button>
@@ -28,14 +30,24 @@ export const RankingScreen: React.FC<Props> = ({ onBack }) => {
       <main className="flex-1 pb-32">
         <div className="px-4 py-6 flex justify-center">
           <div className="flex h-11 bg-white/5 rounded-xl p-1 w-full max-w-xs">
-            <button className="flex-1 rounded-lg bg-white/10 text-white text-xs font-bold uppercase tracking-wider">Amigos</button>
-            <button className="flex-1 rounded-lg text-white/40 text-xs font-bold uppercase tracking-wider">Global</button>
+            <button
+              onClick={() => setActiveTab('friends')}
+              className={`flex-1 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${activeTab === 'friends' ? 'bg-white/10 text-white' : 'text-white/40'}`}
+            >
+              Amigos
+            </button>
+            <button
+              onClick={() => setActiveTab('global')}
+              className={`flex-1 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${activeTab === 'global' ? 'bg-white/10 text-white' : 'text-white/40'}`}
+            >
+              Global
+            </button>
           </div>
         </div>
 
         <section className="flex items-end justify-center gap-3 px-6 py-10 mb-8 relative">
           <div className="absolute inset-0 bg-primary/10 blur-[100px] rounded-full pointer-events-none"></div>
-          
+
           {/* 2nd Place */}
           <div className="flex flex-col items-center gap-3 order-1 mb-2">
             <div className="relative">
@@ -87,7 +99,7 @@ export const RankingScreen: React.FC<Props> = ({ onBack }) => {
                 <span className="w-6 text-center text-white/30 font-black">{p.rank}</span>
                 <div className="relative">
                   <div className="w-14 h-14 rounded-full border-2 border-white/10 overflow-hidden">
-                    <img src={`https://picsum.photos/100/100?random=${i+20}`} className="w-full h-full object-cover" />
+                    <img src={`https://picsum.photos/100/100?random=${i + 20}`} className="w-full h-full object-cover" />
                   </div>
                   <div className="absolute -bottom-1 -right-1 bg-primary text-[8px] font-black px-1.5 py-0.5 rounded-md border border-background-dark">Lvl {p.level}</div>
                 </div>
