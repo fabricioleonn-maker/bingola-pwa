@@ -16,7 +16,7 @@ export const RankingScreen: React.FC<Props> = ({ onBack }) => {
   ];
 
   return (
-    <div className="flex flex-col min-h-screen bg-background-dark">
+    <div className="flex flex-col min-h-[100dvh] bg-background-dark pb-[env(safe-area-inset-bottom)]">
       <header className="sticky top-0 z-20 bg-background-dark/95 backdrop-blur-md p-4 pb-2 border-b border-white/5 flex items-center justify-between">
         <button onClick={onBack} className="w-10 h-10 flex items-center justify-center text-white">
           <span className="material-symbols-outlined">arrow_back_ios</span>

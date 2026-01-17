@@ -164,7 +164,7 @@ export const LobbyScreen: React.FC<Props> = ({ onBack, onStart, onNavigate }) =>
   if (!room) return null;
 
   return (
-    <div className="flex flex-col min-h-screen bg-background-dark font-display text-white relative">
+    <div className="flex flex-col min-h-[100dvh] bg-background-dark text-white font-sans overflow-x-hidden relative pb-[env(safe-area-inset-bottom)]">
       <header className="sticky top-0 z-40 flex items-center bg-background-dark/90 backdrop-blur-md p-4 justify-between border-b border-white/5">
         <button onClick={handleBack} className="text-white flex size-12 items-center justify-start">
           <span className="material-symbols-outlined">arrow_back</span>

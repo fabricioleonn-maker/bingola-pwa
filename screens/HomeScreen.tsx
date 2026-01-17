@@ -200,7 +200,7 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-background-dark pb-32">
+    <div className="flex flex-col min-h-[100dvh] bg-background-dark text-white font-sans overflow-x-hidden pb-[env(safe-area-inset-bottom)]">
       <header className="flex items-center justify-between p-6 pt-10">
         <div className="flex flex-col">
           <h2 className="text-2xl font-bold">Olá, {userName}! 👋</h2>

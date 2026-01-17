@@ -53,8 +53,7 @@ export const LoginScreen: React.FC<LoginProps> = ({ onLogin, onGoToRegister }) =
   };
 
   return (
-    <div className="min-h-screen bg-black flex flex-col items-center justify-between px-6 py-10 relative overflow-hidden">
-
+    <div className="min-h-[100dvh] bg-background-dark text-white font-sans relative overflow-hidden flex flex-col pb-[env(safe-area-inset-bottom)]">
       {/* Background Decorativo - Glows */}
       <div className="absolute inset-0 opacity-40 pointer-events-none z-0">
         <div className="absolute top-[10%] right-[15%] w-[40vw] h-[40vw] bg-primary/20 rounded-full blur-[80px]"></div>

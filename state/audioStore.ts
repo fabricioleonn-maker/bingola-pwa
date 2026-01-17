@@ -49,7 +49,7 @@ export const useAudioStore = create<AudioState>()(
     persist(
         (set) => ({
             isMuted: false,
-            isPlaying: true,
+            isPlaying: false,
             volume: 0.5,
             currentGenre: '00INTRO',
             introRequested: false,

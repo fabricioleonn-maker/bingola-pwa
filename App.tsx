@@ -296,14 +296,16 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="bg-background-dark min-h-screen">
-      <div className="max-w-[430px] mx-auto min-h-screen relative shadow-2xl">
+    <div className="bg-background-dark min-h-[100dvh]">
+      <div className="max-w-[430px] mx-auto min-h-[100dvh] relative shadow-2xl flex flex-col pb-[env(safe-area-inset-bottom)]">
         <NotificationToast />
         <PersistentGameLoop />
         <BackgroundMusic currentScreen={currentScreen} />
         <GlobalMusicHeader currentScreen={currentScreen} />
         <TutorialOverlay onNavigate={setCurrentScreen} />
-        {renderScreen()}
+        <div className="flex-1 relative flex flex-col">
+          {renderScreen()}
+        </div>
       </div>
     </div>
   );

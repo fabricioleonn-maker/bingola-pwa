@@ -21,35 +21,43 @@ const BackgroundMusic: React.FC<Props> = ({ currentScreen }) => {
         }
     }, [isPlaying, isMuted, togglePlay]);
 
-    // First interaction unblocker (Aggressive)
+    // First interaction unblocker (Aggressive & State-Driving)
     useEffect(() => {
         const handleUnblock = async () => {
-            if (audioRef.current && isPlaying && !isMuted && !isIntroPlaying) {
-                console.log("[Audio] User interaction detected. Attempting unblock...");
+            console.log("[Audio] Interaction detected. Attempting to drive state and unblock...");
+
+            // If the store says we aren't playing, try to set it to playing
+            if (!isPlaying && !isMuted) {
+                togglePlay();
+            }
+
+            if (audioRef.current) {
                 try {
                     await audioRef.current.play();
-                    console.log("[Audio] Success! Unblocked.");
+                    console.log("[Audio] Playback started successfully via interaction.");
 
-                    // Remove listeners once confirmed playing
+                    // Cleanup
                     window.removeEventListener('mousedown', handleUnblock);
                     window.removeEventListener('touchstart', handleUnblock);
                     window.removeEventListener('keydown', handleUnblock);
                 } catch (e) {
-                    console.warn("[Audio] Interaction play attempt failed:", e);
+                    console.warn("[Audio] Direct play failed, but state might have updated:", e);
                 }
             }
         };
 
-        window.addEventListener('mousedown', handleUnblock, true);
-        window.addEventListener('touchstart', handleUnblock, true);
-        window.addEventListener('keydown', handleUnblock, true);
+        if (!isPlaying) {
+            window.addEventListener('mousedown', handleUnblock, { once: true, capture: true });
+            window.addEventListener('touchstart', handleUnblock, { once: true, capture: true });
+            window.addEventListener('keydown', handleUnblock, { once: true, capture: true });
+        }
 
         return () => {
             window.removeEventListener('mousedown', handleUnblock, true);
             window.removeEventListener('touchstart', handleUnblock, true);
             window.removeEventListener('keydown', handleUnblock, true);
         };
-    }, [isPlaying, isMuted, isIntroPlaying]);
+    }, [isPlaying, isMuted, togglePlay]);
 
     // Dynamic track path logic
     const getTrackPath = (genre: MusicGenre, index: number) => {

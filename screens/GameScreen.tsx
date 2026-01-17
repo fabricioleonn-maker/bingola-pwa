@@ -676,8 +676,7 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
   }
 
   return (
-
-    <div className="flex flex-col h-screen bg-background-dark relative overflow-hidden">
+    <div className="flex flex-col min-h-[100dvh] bg-background-dark text-white font-sans overflow-hidden relative pb-[env(safe-area-inset-bottom)]">
       {/* Background Elements */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
         <div className="absolute top-[-10%] right-[-10%] w-[500px] h-[500px] bg-primary/20 rounded-full blur-[100px] animate-pulse"></div>

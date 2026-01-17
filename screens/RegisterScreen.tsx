@@ -121,8 +121,8 @@ export const RegisterScreen: React.FC<Props> = ({ onBack, onComplete }) => {
   };
 
   return (
-    <div className="min-h-screen bg-black flex flex-col relative overflow-hidden">
-      {/* Background Decorativo */}
+    <div className="min-h-[100dvh] bg-background-dark text-white font-sans relative overflow-hidden flex flex-col pb-[env(safe-area-inset-bottom)]">
+      {/* Animated Background -->Decorativo */}
       <div className="absolute inset-0 opacity-20 pointer-events-none z-0">
         <div className="absolute top-[5%] left-[10%] w-[50vw] h-[50vw] bg-primary/20 rounded-full blur-[100px]"></div>
         <div className="absolute bottom-[10%] right-[10%] w-[60vw] h-[60vw] bg-secondary/15 rounded-full blur-[120px]"></div>
