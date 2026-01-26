@@ -22,7 +22,9 @@ export default defineConfig(({ mode }) => {
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
         workbox: {
           cleanupOutdatedCaches: true,
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,mp3,wav}'],
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'], // Structural assets only
+          globIgnores: ['**/node_modules/**/*', '**/*.mp3', '**/*.wav', '**/audio/**/*'], // Explicitly ignore audio
+          maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // Generous 10MB limit
           runtimeCaching: [
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
@@ -31,7 +33,7 @@ export default defineConfig(({ mode }) => {
                 cacheName: 'google-fonts-cache',
                 expiration: {
                   maxEntries: 10,
-                  maxAgeSeconds: 60 * 60 * 24 * 365 // <== 365 days
+                  maxAgeSeconds: 60 * 60 * 24 * 365
                 },
                 cacheableResponse: {
                   statuses: [0, 200]
@@ -39,13 +41,39 @@ export default defineConfig(({ mode }) => {
               }
             },
             {
-              urlPattern: /\.(?:png|jpg|jpeg|svg|gif|mp3|wav)$/,
+              urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'gstatic-fonts-cache',
+                expiration: {
+                  maxEntries: 10,
+                  maxAgeSeconds: 60 * 60 * 24 * 365
+                },
+                cacheableResponse: {
+                  statuses: [0, 200]
+                }
+              }
+            },
+            {
+              urlPattern: /\.(?:mp3|wav|ogg)$/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'audio-cache',
+                expiration: {
+                  maxEntries: 50,
+                  maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
+                },
+                rangeRequests: true,
+              },
+            },
+            {
+              urlPattern: /\.(?:png|jpg|jpeg|svg|gif)$/,
               handler: 'StaleWhileRevalidate',
               options: {
                 cacheName: 'assets-cache',
                 expiration: {
                   maxEntries: 50,
-                  maxAgeSeconds: 60 * 60 * 24 * 30 // <== 30 days
+                  maxAgeSeconds: 60 * 60 * 24 * 30
                 }
               }
             }
