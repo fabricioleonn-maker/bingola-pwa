@@ -8,14 +8,25 @@ interface Notification {
     type: NotificationType;
 }
 
+interface ModalOptions {
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    onCancel?: () => void;
+}
+
 interface NotificationState {
     notifications: Notification[];
+    modal: ModalOptions | null;
     show: (message: string, type?: NotificationType) => void;
     dismiss: (id: string) => void;
+    confirm: (options: ModalOptions) => void;
+    closeModal: () => void;
 }
 
 export const useNotificationStore = create<NotificationState>((set) => ({
     notifications: [],
+    modal: null,
     show: (message, type = 'success') => {
         const id = Date.now().toString();
         set((state) => ({
@@ -33,5 +44,11 @@ export const useNotificationStore = create<NotificationState>((set) => ({
         set((state) => ({
             notifications: state.notifications.filter(n => n.id !== id)
         }));
+    },
+    confirm: (options) => {
+        set({ modal: options });
+    },
+    closeModal: () => {
+        set({ modal: null });
     }
 }));

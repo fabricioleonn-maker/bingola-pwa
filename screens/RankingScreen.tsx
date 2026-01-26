@@ -21,7 +21,7 @@ export const RankingScreen: React.FC<Props> = ({ onBack }) => {
         <button onClick={onBack} className="w-10 h-10 flex items-center justify-center text-white">
           <span className="material-symbols-outlined">arrow_back_ios</span>
         </button>
-        <h2 className="text-lg font-bold">{activeTab === 'global' ? 'Ranking Global' : 'Ranking Amigos'}</h2>
+        <h2 className="text-lg font-bold">{activeTab === 'global' ? 'Ranking Global' : 'Ranking Social'}</h2>
         <button className="w-10 h-10 flex items-center justify-center text-primary">
           <span className="material-symbols-outlined">workspace_premium</span>
         </button>
@@ -34,7 +34,7 @@ export const RankingScreen: React.FC<Props> = ({ onBack }) => {
               onClick={() => setActiveTab('friends')}
               className={`flex-1 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${activeTab === 'friends' ? 'bg-white/10 text-white' : 'text-white/40'}`}
             >
-              Amigos
+              Social
             </button>
             <button
               onClick={() => setActiveTab('global')}

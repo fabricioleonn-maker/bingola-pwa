@@ -1,6 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { useNotificationStore } from '../state/notificationStore';
 import { AppScreen } from '../types';
 
 interface Props {
@@ -56,9 +57,9 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
 
       setUser({ ...user, username: newName });
       setIsEditing(false);
-      alert('Perfil atualizado!');
+      useNotificationStore.getState().show('Perfil atualizado!', 'success');
     } catch (err: any) {
-      alert(err.message);
+      useNotificationStore.getState().show(err.message, 'error');
     } finally {
       setIsUpdating(false);
     }
@@ -68,8 +69,8 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
     const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
       redirectTo: `${window.location.origin}/reset-password`,
     });
-    if (error) alert(error.message);
-    else alert('E-mail de redefinição de senha enviado!');
+    if (error) useNotificationStore.getState().show(error.message, 'error');
+    else useNotificationStore.getState().show('E-mail de redefinição de senha enviado!', 'info');
   };
 
   const uploadAvatar = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -110,9 +111,9 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
       }
 
       setUser({ ...user, avatar_url: publicUrl });
-      alert('Foto de perfil atualizada com sucesso!');
+      useNotificationStore.getState().show('Foto de perfil atualizada com sucesso!', 'success');
     } catch (error: any) {
-      alert(error.message);
+      useNotificationStore.getState().show(error.message, 'error');
     } finally {
       setUploading(false);
     }
@@ -300,13 +301,17 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
           <span className="material-symbols-outlined">leaderboard</span>
           <span className="text-[10px] font-bold">Ranking</span>
         </button>
+        <button onClick={() => onNavigate('friends')} className="flex flex-col items-center gap-1 text-white/40">
+          <span className="material-symbols-outlined">group</span>
+          <span className="text-[10px] font-bold">Social</span>
+        </button>
+        <button onClick={() => onNavigate('store')} className="flex flex-col items-center gap-1 text-white/40">
+          <span className="material-symbols-outlined">storefront</span>
+          <span className="text-[10px] font-bold">Loja</span>
+        </button>
         <button onClick={() => onNavigate('profile')} className="flex flex-col items-center gap-1 text-primary">
           <span className="material-symbols-outlined fill-1">person</span>
           <span className="text-[10px] font-bold">Perfil</span>
-        </button>
-        <button onClick={() => onNavigate('messages')} className="flex flex-col items-center gap-1 text-white/40">
-          <span className="material-symbols-outlined">chat_bubble</span>
-          <span className="text-[10px] font-bold">Avisos</span>
         </button>
       </nav>
     </div>

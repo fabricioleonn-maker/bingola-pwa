@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { AppScreen } from '../types';
 import { useRoomStore } from '../state/roomStore';
+import { useNotificationStore } from '../state/notificationStore';
 import MusicPlayerPanel from '../components/MusicPlayerPanel';
 
 interface Props {
@@ -69,127 +70,90 @@ export const HostDashboard: React.FC<Props> = ({ onBack, onPublish, onNavigate }
     if (isPublishing || !profileId) return;
 
     if (!roomName || roomName.length < 3) {
-      alert("O nome da mesa deve ter pelo menos 3 caracteres.");
+      useNotificationStore.getState().show("O nome da mesa deve ter pelo menos 3 caracteres.", 'error');
       return;
     }
     if (pLimitNum < 1) {
-      alert("A mesa precisa de pelo menos 1 vaga.");
+      useNotificationStore.getState().show("A mesa precisa de pelo menos 1 vaga.", 'error');
       return;
     }
     if (roundsNum < 1) {
-      alert("A mesa precisa de pelo menos 1 rodada.");
+      useNotificationStore.getState().show("A mesa precisa de pelo menos 1 rodada.", 'error');
       return;
-    }
-
-    if (pLimitNum === 1) {
-      if (!window.confirm("Atenção: Você está abrindo uma mesa para apenas 1 jogador (você mesmo). Deseja continuar?")) {
-        return;
-      }
     }
 
     if (userBalance < totalCost) {
-      alert(`Saldo insuficiente! Esta mesa custa ${totalCost} BCOINS.`);
-      onNavigate('store');
+      useNotificationStore.getState().show(`Saldo insuficiente! Esta mesa custa ${totalCost} BCOINS.`, 'error');
+      setTimeout(() => onNavigate('store'), 2000);
       return;
     }
 
-    setIsPublishing(true);
+    const performPublish = async () => {
+      setIsPublishing(true);
+      try {
+        // Cleanup
+        setRoomId(null);
+        const keys = [
+          'bingola_active_room', 'bingola_active_room_id', 'bingola_game_running',
+          'bingola_is_paused', 'bingola_drawn_numbers', 'bingola_player_marked',
+          'bingola_player_grid', 'bingola_claimed_prizes', 'bingola_last_winner',
+          'bingola_host_draft'
+        ];
+        keys.forEach(k => localStorage.removeItem(k));
 
-    try {
-      // 0. Aggressive Cleanup BEFORE creating new room (User suggestion)
-      setRoomId(null);
-      localStorage.removeItem('bingola_active_room');
-      localStorage.removeItem('bingola_active_room_id');
-      localStorage.removeItem('bingola_game_running');
-      localStorage.removeItem('bingola_is_paused');
-      localStorage.removeItem('bingola_drawn_numbers');
-      localStorage.removeItem('bingola_player_marked');
-      localStorage.removeItem('bingola_player_grid');
-      localStorage.removeItem('bingola_claimed_prizes');
-      localStorage.removeItem('bingola_last_winner');
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update({ bcoins: userBalance - totalCost })
+          .eq('id', profileId);
 
-      // 1. Deduct from Supabase profiles
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({ bcoins: userBalance - totalCost })
-        .eq('id', profileId);
+        if (updateError) throw new Error('Erro ao processar pagamento.');
 
-      if (updateError) {
-        throw new Error('Erro ao processar pagamento no servidor.');
+        const shortCode = Math.floor(1000 + Math.random() * 9000).toString();
+        let effectiveBpoints = bpointsNum;
+        if (prizeDistribution === 'total') {
+          effectiveBpoints = Math.floor(bpointsNum / Math.max(1, roundsNum));
+        }
+
+        const { data: roomData, error: roomError } = await supabase
+          .from('rooms')
+          .insert({
+            host_id: profileId,
+            name: roomName,
+            code: shortCode,
+            player_limit: pLimitNum,
+            rounds: roundsNum,
+            current_round: 1,
+            prize_pool: effectiveBpoints,
+            status: 'lobby'
+          })
+          .select()
+          .single();
+
+        if (roomError) throw new Error('Erro ao criar sala.');
+
+        setRoomId(roomData.id);
+        localStorage.setItem('bingola_game_running', 'false');
+        localStorage.setItem('bingola_is_paused', 'false');
+        localStorage.setItem('bingola_game_settings', JSON.stringify({
+          interval: 12,
+          rules: { cheia: true, cinquina: true, cantos: true, x: true }
+        }));
+
+        setTimeout(() => onPublish(), 800);
+      } catch (e: any) {
+        useNotificationStore.getState().show(e.message, 'error');
+        setIsPublishing(false);
       }
+    };
 
-      const shortCode = Math.floor(1000 + Math.random() * 9000).toString();
-
-      // Calculate effective per-round value
-      let effectiveBpoints = bpointsNum;
-      if (prizeDistribution === 'total') {
-        effectiveBpoints = Math.floor(bpointsNum / Math.max(1, roundsNum));
-      }
-
-      // 2. Create room in Supabase
-      const { data: roomData, error: roomError } = await supabase
-        .from('rooms')
-        .insert({
-          host_id: profileId,
-          name: roomName,
-          code: shortCode,
-          player_limit: pLimitNum,
-          rounds: roundsNum,
-          current_round: 1,
-          prize_pool: effectiveBpoints,
-          status: 'lobby'
-        })
-        .select()
-        .single();
-
-      if (roomError) {
-        console.error('Room error:', roomError);
-        throw new Error('Erro ao criar sala no Supabase.');
-      }
-
-      const roomSettings = {
-        id: roomData.id,
-        host_id: profileId,
-        name: roomName,
-        limit: pLimitNum,
-        totalRounds: roundsNum,
-        currentRound: 1,
-        code: shortCode,
-        prize: effectiveBpoints,
-        prizeDistribution,
-        bpoints: effectiveBpoints,
-        prize_pool: effectiveBpoints,
-        cost: totalCost,
-        isHost: true
-      };
-
-      localStorage.setItem('bingola_active_room', JSON.stringify(roomSettings));
-      // IMPORTANT: make the room id the single source of truth.
-      // Without this, the host lobby won't start subscription/polling and
-      // join requests only appear after a manual navigation.
-      setRoomId(roomData.id);
-      localStorage.setItem('bingola_game_running', 'false');
-      localStorage.setItem('bingola_is_paused', 'false');
-
-      // ✅ Garante configurações padrão da mesa ao criar (Ritmo 12s por padrão)
-      const defaultSettings = {
-        interval: 12,
-        rules: { cheia: true, cinquina: true, cantos: true, x: true }
-      };
-      localStorage.setItem('bingola_game_settings', JSON.stringify(defaultSettings));
-      localStorage.removeItem('bingola_drawn_numbers');
-      localStorage.removeItem('bingola_player_marked');
-      localStorage.removeItem('bingola_player_grid');
-      localStorage.removeItem('bingola_claimed_prizes');
-      localStorage.removeItem('bingola_last_winner');
-
-      // Clear draft
-      localStorage.removeItem('bingola_host_draft');
-
-      setTimeout(() => onPublish(), 800);
-    } catch (e: any) {
-      alert(e.message || 'Erro ao publicar mesa.');
-      setIsPublishing(false);
+    if (pLimitNum === 1) {
+      useNotificationStore.getState().confirm({
+        title: "Mesa Solo?",
+        message: "Você está abrindo uma mesa para apenas 1 jogador. Deseja continuar?",
+        onConfirm: performPublish
+      });
+    } else {
+      performPublish();
     }
   };
 

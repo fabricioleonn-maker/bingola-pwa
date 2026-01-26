@@ -1,21 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { useAudioStore } from '../state/audioStore';
 import MusicPlayerPanel from '../components/MusicPlayerPanel';
+import { AppScreen } from '../types';
 
 interface Props {
   onBack: () => void;
+  onNavigate: (screen: AppScreen) => void;
 }
 
 export const AudioSettingsScreen: React.FC<Props> = ({ onBack }) => {
-  const [selectedVoice, setSelectedVoice] = useState('vovo');
+  const { isMuted, volume, toggleMute, setVolume, isNarrationMuted, toggleNarration, selectedVoice, setVoice } = useAudioStore();
   const [narrationVolume, setNarrationVolume] = useState(80);
-  const { isMuted, volume, toggleMute, setVolume } = useAudioStore();
+
   useEffect(() => {
     const savedSettings = localStorage.getItem('bingola_game_settings');
     if (savedSettings) {
       try {
         const settings = JSON.parse(savedSettings);
-        setSelectedVoice(settings.selectedVoice || 'vovo');
         setNarrationVolume(settings.narrationVolume ?? 80);
       } catch (e) {
         console.error("Erro ao carregar configurações");
@@ -54,16 +55,18 @@ export const AudioSettingsScreen: React.FC<Props> = ({ onBack }) => {
                   type="radio"
                   name="voice"
                   checked={selectedVoice === voice.id}
-                  onChange={() => setSelectedVoice(voice.id)}
+                  onChange={() => setVoice(voice.id)}
                   className="hidden"
                 />
                 <div className="flex grow flex-col">
                   <p className="text-slate-900 dark:text-white text-base font-bold group-hover:text-primary transition-colors">{voice.name}</p>
                   <p className="text-slate-500 dark:text-slate-400 text-xs">{voice.desc}</p>
                 </div>
-                <button className={`flex items-center justify-center size-10 rounded-full transition-colors ${selectedVoice === voice.id ? 'bg-primary text-white' : 'bg-primary/10 text-primary'}`}>
-                  <span className="material-symbols-outlined filled text-xl" style={{ fontVariationSettings: "'FILL' 1" }}>play_arrow</span>
-                </button>
+                <div className={`flex items-center justify-center size-10 rounded-full transition-colors ${selectedVoice === voice.id ? 'bg-primary text-white' : 'bg-primary/10 text-primary'}`}>
+                  <span className="material-symbols-outlined filled text-xl" style={{ fontVariationSettings: "'FILL' 1" }}>
+                    {selectedVoice === voice.id ? 'check' : 'play_arrow'}
+                  </span>
+                </div>
               </label>
             ))}
           </div>
@@ -77,6 +80,26 @@ export const AudioSettingsScreen: React.FC<Props> = ({ onBack }) => {
             <span className="material-symbols-outlined text-primary">analytics</span>
           </div>
           <div className="px-4 space-y-4">
+            <div className="bg-white dark:bg-surface-dark rounded-3xl p-6 border border-gray-200 dark:border-white/5 shadow-sm">
+              <div className="flex justify-between items-center mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                    <span className="material-symbols-outlined text-primary text-lg">volume_up</span>
+                  </div>
+                  <p className="font-bold text-sm">Narração do Sorteio</p>
+                </div>
+                <button
+                  onClick={toggleNarration}
+                  className={`relative w-12 h-6 rounded-full transition-colors duration-300 ${!isNarrationMuted ? 'bg-primary' : 'bg-gray-300 dark:bg-white/10'}`}
+                >
+                  <div className={`absolute top-1 left-1 size-4 bg-white rounded-full transition-transform duration-300 ${!isNarrationMuted ? 'translate-x-6' : 'translate-x-0'}`} />
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-500 dark:text-white/30 font-bold uppercase tracking-wider">
+                {isNarrationMuted ? 'NARRAÇÃO DESATIVADA' : 'NARRAÇÃO ATIVADA (PT-BR)'}
+              </p>
+            </div>
+
             <div className="bg-white dark:bg-surface-dark rounded-3xl p-6 border border-gray-200 dark:border-white/5 shadow-sm">
               <div className="flex justify-between mb-4">
                 <div className="flex items-center gap-3">

@@ -18,6 +18,7 @@ type RealtimeState = 'IDLE' | 'SUBSCRIBING' | 'SUBSCRIBED' | 'ERROR';
 type RoomStore = {
   roomId: string | null;
   room: Room | null;
+  currentUserId: string | null;
 
   pending: Participant[];
   accepted: Participant[];
@@ -54,6 +55,7 @@ type RoomStore = {
   approve: (participantId: string) => Promise<void>;
   reject: (participantId: string) => Promise<void>;
   updateRoomStatus: (status: 'waiting' | 'playing' | 'finished') => Promise<void>;
+  joinRoomWithStatus: (roomId: string, userId: string, initialStatus: 'pending' | 'accepted') => Promise<void>;
 
   hardExit: (roomId: string, userId: string) => Promise<void>;
 
@@ -72,6 +74,7 @@ type RoomStore = {
 export const useRoomStore = create<RoomStore>((set, get) => ({
   roomId: null,
   room: null,
+  currentUserId: null,
   pending: [],
   accepted: [],
   realtime: 'IDLE',
@@ -201,6 +204,7 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
     // 1b. Sync myStatus
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
+      set({ currentUserId: user.id });
       // Direct fetch for my status to be sure (including rejected)
       const { data: myPart } = await supabase.from('participants')
         .select('status')
@@ -210,6 +214,8 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
 
       if (myPart) set({ myStatus: myPart.status as any });
       else set({ myStatus: null });
+    } else {
+      set({ currentUserId: null });
     }
 
     // 2. Refresh rápido no status da sala
@@ -253,6 +259,18 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
 
           const current = get().room;
           const newRoom: any = payload.new;
+
+          // Closure detection for participants
+          if (newRoom.status === 'finished' && current?.status !== 'finished') {
+            const isHost = newRoom.host_id === (supabase.auth.getUser() as any).data?.user?.id;
+            if (!isHost) {
+              useNotificationStore.getState().show("A mesa foi encerrada pelo anfitrião.", 'info');
+              // Immediate cleanup
+              setTimeout(() => {
+                get().setRoomId(null);
+              }, 2000);
+            }
+          }
 
           // Only update drawn_numbers if present in the payload
           // If undefined, it means this update touched other columns (e.g. status)
@@ -488,6 +506,34 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
       if (!state.room) return {};
       return { room: { ...state.room, status: status as any } };
     });
+  },
+
+  joinRoomWithStatus: async (roomId, userId, initialStatus) => {
+    set({ inFlight: { ...get().inFlight, [userId]: true } });
+    try {
+      // Check if already in room
+      const { data: existing } = await supabase
+        .from('participants')
+        .select('id')
+        .eq('room_id', roomId)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (!existing) {
+        await supabase.from('participants').insert({
+          room_id: roomId,
+          user_id: userId,
+          status: initialStatus
+        });
+      } else {
+        await supabase.from('participants').update({
+          status: initialStatus
+        }).eq('id', (existing as any).id);
+      }
+      await get().refreshParticipants(roomId);
+    } finally {
+      set({ inFlight: { ...get().inFlight, [userId]: false } });
+    }
   },
 
   hardExit: async (roomId, userId) => {

@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAudioStore } from '../state/audioStore';
+import { useNotificationStore } from '../state/notificationStore';
 
 interface Props {
   onBack: () => void;
@@ -79,6 +80,7 @@ export const RegisterScreen: React.FC<Props> = ({ onBack, onComplete }) => {
         email,
         password,
         options: {
+          emailRedirectTo: window.location.origin,
           data: {
             username: name,
             display_name: name
@@ -103,16 +105,26 @@ export const RegisterScreen: React.FC<Props> = ({ onBack, onComplete }) => {
 
       if (authData.user) {
         console.log("User registered successfully:", authData.user.id);
+
+        // Check if user already exists (identities is empty when enumeration protection is on)
+        if (authData.user.identities && authData.user.identities.length === 0) {
+          setError('Este e-mail já está cadastrado. Tente fazer login.');
+          setLoading(false);
+          return;
+        }
+
         // Profile creation is now automatically handled by the PostgreSQL Trigger 'on_auth_user_created'
       }
 
       const isConfirmationRequired = authData.session === null;
       if (isConfirmationRequired) {
-        alert("Conta criada! Por favor, verifique sua caixa de entrada para confirmar seu e-mail antes de fazer login.");
+        useNotificationStore.getState().show("Conta criada! Verifique sua caixa de entrada para confirmar seu e-mail.", 'info');
+        onBack(); // Send back to Login instead of proceeding as 'explorer'
+      } else {
+        useAudioStore.getState().setGenre('00INTRO');
+        useAudioStore.setState({ currentTrackIndex: 1, isPlaying: true });
+        onComplete();
       }
-
-      useAudioStore.getState().playIntro();
-      onComplete();
     } catch (e: any) {
       setError(e.message || 'Erro ao criar conta. Tente novamente.');
     } finally {

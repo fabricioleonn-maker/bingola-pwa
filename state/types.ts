@@ -36,3 +36,26 @@ export type Participant = {
         bcoins?: number;
     };
 };
+export type Message = {
+    id: string;
+    room_id?: string;
+    sender_id: string;
+    receiver_id?: string;
+    content: string;
+    created_at: string;
+    profiles?: {
+        username: string;
+        avatar_url: string;
+    }
+};
+
+export type Friendship = {
+    id: string;
+    user_id: string;
+    friend_id: string;
+    status: 'pending' | 'accepted' | 'blocked';
+    friend_profiles?: {
+        username: string;
+        avatar_url: string;
+    }
+};

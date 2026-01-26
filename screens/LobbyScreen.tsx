@@ -4,6 +4,11 @@ import { supabase } from '../lib/supabase';
 import { AppScreen } from '../types';
 import { useRoomStore } from '../state/roomStore';
 import { useNotificationStore } from '../state/notificationStore';
+import { useFriendshipStore } from '../state/friendshipStore';
+import { useInvitationStore } from '../state/invitationStore';
+import { useAudioStore } from '../state/audioStore';
+import { useChatStore } from '../state/chatStore';
+import { FloatingChat } from '../components/FloatingChat';
 
 interface Props {
   onBack: () => void;
@@ -20,11 +25,19 @@ export const LobbyScreen: React.FC<Props> = ({ onBack, onStart, onNavigate }) =>
   const reject = useRoomStore(s => s.reject);
   const refreshParticipants = useRoomStore(s => s.refreshParticipants);
   const subscribe = useRoomStore(s => s.subscribe);
+  const { sendRequest } = useFriendshipStore();
 
   const [hostProfile, setHostProfile] = useState<any>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+
+  const { friends, fetchFriends } = useFriendshipStore();
+  const { sendInvite } = useInvitationStore();
+  const [showVoiceModal, setShowVoiceModal] = useState(false);
+  const { selectedVoice, setVoice, isNarrationMuted, toggleNarration } = useAudioStore();
 
   useEffect(() => {
     if (!roomId) return;
@@ -84,16 +97,17 @@ export const LobbyScreen: React.FC<Props> = ({ onBack, onStart, onNavigate }) =>
 
   const handleShare = async () => {
     if (!room) return;
-    const shareText = `Vem pro Bingola!\nMesa: ${room.name}\nPIN: ${room.code}`;
+    const shareUrl = `${window.location.protocol}//${window.location.host}${window.location.pathname}?join=${room.code}&trusted=1`;
+    const shareText = `Vem pro Bingola!\nMesa: ${room.name.toUpperCase()}\n\nEntre agora clicando no link:\n${shareUrl}`;
     try {
       if (navigator.share) {
-        await navigator.share({ title: 'Bingola', text: shareText });
+        await navigator.share({ title: 'Bingola', text: shareText, url: shareUrl });
       } else {
         await navigator.clipboard.writeText(shareText);
-        useNotificationStore.getState().show("PIN copiado!", 'info');
+        useNotificationStore.getState().show("Link de convite copiado!", 'info');
       }
     } catch (err) {
-      useNotificationStore.getState().show("PIN: " + room.code, 'info');
+      useNotificationStore.getState().show("Código: " + room.code, 'info');
     }
   };
 
@@ -156,12 +170,52 @@ export const LobbyScreen: React.FC<Props> = ({ onBack, onStart, onNavigate }) =>
     }
   };
 
-  const handleBack = async () => {
-    // Just minimize (navigate home) without cancelling
-    onBack();
+  const handleBack = () => {
+    setShowExitConfirm(true);
   };
 
-  if (!room) return null;
+  const handleLeavePermanent = async () => {
+    if (!currentUserId || !roomId) return;
+
+    try {
+      useNotificationStore.getState().show("Encerrando mesa...", 'info');
+
+      if (room?.host_id === currentUserId) {
+        // As Host, we MUST terminate the room for everyone
+        const { error } = await supabase
+          .from('rooms')
+          .update({ status: 'finished' })
+          .eq('id', roomId);
+
+        if (error) throw error;
+        console.log("[Lobby] Host terminated room successfully.");
+      }
+
+      // Now clean up locally
+      await useRoomStore.getState().hardExit(roomId, currentUserId);
+      onBack();
+
+    } catch (err: any) {
+      console.error("[Lobby] Error leaving room:", err);
+      useNotificationStore.getState().show("Erro ao sair: " + err.message, 'error');
+    }
+  };
+
+  if (!room) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[100dvh] bg-background-dark p-6 text-center">
+        <div className="size-16 border-4 border-primary/20 border-t-primary rounded-full animate-spin mb-4"></div>
+        <h2 className="text-xl font-black italic uppercase italic text-white/80">Sincronizando Mesa...</h2>
+        <p className="text-white/40 text-xs mt-2 max-w-xs">Aguardando dados oficiais do Supabase. Se demorar, verifique sua conexão.</p>
+        <button onClick={onBack} className="mt-8 text-white/40 text-[10px] font-black uppercase tracking-widest border border-white/5 px-6 py-2 rounded-xl">Cancelar</button>
+      </div>
+    );
+  }
+
+  // Diagnostic Log for Master Account
+  if (currentUserId) {
+    console.log("[Lobby] Check:", { userId: currentUserId, hostId: room.host_id, isMatch: currentUserId === room.host_id });
+  }
 
   return (
     <div className="flex flex-col min-h-[100dvh] bg-background-dark text-white font-sans overflow-x-hidden relative pb-[env(safe-area-inset-bottom)]">
@@ -173,9 +227,23 @@ export const LobbyScreen: React.FC<Props> = ({ onBack, onStart, onNavigate }) =>
           <h2 id="room-code-display" className="text-[10px] font-black uppercase tracking-widest opacity-40 italic">CÓD MESA: {room.code}</h2>
           <p className="text-lg font-black text-primary truncate leading-tight uppercase italic">{room.name}</p>
         </div>
-        <button id="settings-gear-btn" onClick={() => onNavigate('room_settings')} className="flex size-12 items-center justify-end text-primary">
-          <span className="material-symbols-outlined">settings</span>
-        </button>
+        <div className="flex gap-2">
+          {/* MUSIC PLAYER BUTTON (Restored) */}
+          <button
+            onClick={() => onNavigate('audio_settings')}
+            className="flex size-11 items-center justify-center text-primary bg-primary/10 rounded-xl active:scale-95 transition-all"
+            title="Configurações de Música"
+          >
+            <span className="material-symbols-outlined">music_note</span>
+          </button>
+
+          <button onClick={() => onNavigate('chat')} className="flex size-11 items-center justify-center text-primary bg-primary/10 rounded-xl">
+            <span className="material-symbols-outlined">chat</span>
+          </button>
+          <button id="settings-gear-btn" onClick={() => onNavigate('room_settings')} className="flex size-11 items-center justify-center text-primary bg-white/5 rounded-xl">
+            <span className="material-symbols-outlined">settings</span>
+          </button>
+        </div>
       </header>
 
       <main className="flex-1 overflow-y-auto pb-40">
@@ -185,11 +253,23 @@ export const LobbyScreen: React.FC<Props> = ({ onBack, onStart, onNavigate }) =>
             <p className="text-white/40 text-[10px] font-black uppercase tracking-[0.3em] mb-2">CÓD MESA DE ACESSO</p>
             <h1 className="text-6xl font-black mb-6 tracking-tighter text-white">{room.code}</h1>
             <div className="w-48 h-48 bg-white rounded-3xl p-4 shadow-xl mb-6 cursor-pointer" onClick={handleShare}>
-              <img src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${room.code}`} className="w-full h-full rounded-xl" alt="QR" />
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(window.location.origin + '?join=' + room.code + '&trusted=1')}`}
+                className="w-full h-full rounded-xl"
+                alt="QR"
+              />
             </div>
-            <button onClick={handleShare} className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-primary bg-primary/10 px-6 py-3 rounded-full border border-primary/20 active:scale-95 transition-all">
-              <span className="material-symbols-outlined text-sm">share</span> Convidar Amigos
-            </button>
+            <div className="flex gap-2">
+              <button onClick={handleShare} className="flex-1 flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest text-white/40 bg-white/5 px-4 py-3 rounded-2xl border border-white/5 active:scale-95 transition-all">
+                <span className="material-symbols-outlined text-sm">share</span> Link
+              </button>
+              <button
+                onClick={() => { fetchFriends(); setShowInviteModal(true); }}
+                className="flex-1 flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest text-primary bg-primary/10 px-4 py-3 rounded-2xl border border-primary/20 active:scale-95 transition-all"
+              >
+                <span className="material-symbols-outlined text-sm">person_add</span> Amigos
+              </button>
+            </div>
           </div>
         </section>
 
@@ -212,7 +292,10 @@ export const LobbyScreen: React.FC<Props> = ({ onBack, onStart, onNavigate }) =>
           </div>
           <div className="grid grid-cols-4 gap-6">
             {hostProfile && (
-              <div className="flex flex-col items-center gap-2" onClick={() => setSelectedPlayer(hostProfile)}>
+              <div className="flex flex-col items-center gap-2" onClick={() => setSelectedPlayer({
+                ...hostProfile,
+                userId: room.host_id
+              })}>
                 <div className="relative p-0.5 rounded-full border-2 border-primary">
                   <div className="size-14 rounded-full overflow-hidden">
                     <img src={hostProfile.avatar} className="w-full h-full object-cover" />
@@ -299,7 +382,7 @@ export const LobbyScreen: React.FC<Props> = ({ onBack, onStart, onNavigate }) =>
       )}
 
       {selectedPlayer && (
-        <div className="fixed inset-0 z-[110] bg-black/90 backdrop-blur-md flex items-center justify-center p-6" onClick={() => setSelectedPlayer(null)}>
+        <div className="fixed inset-0 z-[160] bg-black/95 backdrop-blur-md flex items-center justify-center p-6" onClick={() => setSelectedPlayer(null)}>
           <div className="bg-surface-dark border border-white/10 p-8 rounded-[3rem] w-full max-w-sm text-center shadow-[0_0_50px_rgba(255,61,113,0.1)]" onClick={e => e.stopPropagation()}>
             <div className="size-24 rounded-full border-4 border-primary/20 mx-auto mb-6 p-1">
               <img src={selectedPlayer.avatar} className="size-full rounded-full object-cover" />
@@ -320,33 +403,81 @@ export const LobbyScreen: React.FC<Props> = ({ onBack, onStart, onNavigate }) =>
               </div>
             </div>
 
-            <div className="flex flex-col gap-3 mb-8">
-              <button
-                onClick={(e) => { e.stopPropagation(); alert('Em breve: Sistema de Chat'); }}
-                className="w-full h-14 bg-white/5 text-white font-black rounded-2xl flex items-center justify-center gap-2 border border-white/5 active:scale-95 transition-all"
-              >
-                <span className="material-symbols-outlined text-primary">chat</span>
-                ENVIAR MENSAGEM
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); alert('Em breve: Adicionar Amigo'); }}
-                className="w-full h-14 bg-white/5 text-white font-black rounded-2xl flex items-center justify-center gap-2 border border-white/5 active:scale-95 transition-all"
-              >
-                <span className="material-symbols-outlined text-primary">person_add</span>
-                ADICIONAR AMIGO
-              </button>
-            </div>
+            {selectedPlayer.userId !== currentUserId && (
+              <div className="flex flex-col gap-4 w-full">
+                {/* MINI CHAT BOX (Quick Message) */}
+                <div className="bg-white/5 p-4 rounded-3xl border border-white/10 space-y-3">
+                  <p className="text-[9px] font-black text-white/30 uppercase tracking-widest text-left ml-2">Diga Oi 💬</p>
+                  <div className="relative">
+                    <input
+                      autoFocus
+                      type="text"
+                      placeholder="E ai, bora jogar?..."
+                      className="w-full h-12 bg-black/20 border border-white/5 rounded-2xl px-4 pr-12 text-sm font-medium outline-none focus:border-primary/30 transition-all"
+                      onKeyDown={async (e) => {
+                        if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {
+                          const val = (e.target as HTMLInputElement).value;
+                          await useChatStore.getState().sendDirectMessage(selectedPlayer.userId, val);
+                          useNotificationStore.getState().show("Mensagem enviada!", 'success');
+                          (e.target as HTMLInputElement).value = '';
+                        }
+                      }}
+                    />
+                    <button
+                      onClick={async (e) => {
+                        const input = e.currentTarget.previousSibling as HTMLInputElement;
+                        if (input.value.trim()) {
+                          await useChatStore.getState().sendDirectMessage(selectedPlayer.userId, input.value);
+                          useNotificationStore.getState().show("Mensagem enviada!", 'success');
+                          input.value = '';
+                        }
+                      }}
+                      className="absolute right-1 top-1 size-10 bg-primary/20 text-primary rounded-xl flex items-center justify-center active:scale-90 transition-all"
+                    >
+                      <span className="material-symbols-outlined text-xl">send</span>
+                    </button>
+                  </div>
+                </div>
 
-            {/* Kick Button (Host Only) */}
+                <div className="flex flex-col gap-3">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onNavigate('friends'); setSelectedPlayer(null); }}
+                    className="w-full h-12 bg-white/5 text-white/40 font-black rounded-2xl flex items-center justify-center gap-2 border border-white/5 active:scale-95 transition-all text-xs"
+                  >
+                    <span className="material-symbols-outlined text-sm">open_in_new</span>
+                    VER TODAS AS MENSAGENS
+                  </button>
+                  <button
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      if (selectedPlayer.userId) {
+                        await sendRequest(selectedPlayer.userId);
+                        useNotificationStore.getState().show("Pedido de amizade enviado!", 'success');
+                        setSelectedPlayer(null);
+                      }
+                    }}
+                    className="w-full h-14 bg-primary/10 text-primary font-black rounded-2xl flex items-center justify-center gap-2 border border-primary/20 active:scale-95 transition-all"
+                  >
+                    <span className="material-symbols-outlined">person_add</span>
+                    ADICIONAR AMIGO
+                  </button>
+                </div>
+              </div>
+            )}
+
             {room.host_id === currentUserId && selectedPlayer.userId !== currentUserId && (
               <button
                 onClick={async (e) => {
                   e.stopPropagation();
-                  if (window.confirm(`Deseja remover ${selectedPlayer.name} da mesa?`)) {
-                    await reject(selectedPlayer.id);
-                    useNotificationStore.getState().show("Jogador removido!", 'success');
-                    setSelectedPlayer(null);
-                  }
+                  useNotificationStore.getState().confirm({
+                    title: "Remover Jogador",
+                    message: `Deseja remover ${selectedPlayer.name} da mesa?`,
+                    onConfirm: async () => {
+                      await reject(selectedPlayer.id);
+                      useNotificationStore.getState().show("Jogador removido!", 'success');
+                      setSelectedPlayer(null);
+                    }
+                  });
                 }}
                 className="w-full h-14 bg-red-500/10 text-red-500 font-black rounded-2xl shadow-none mb-4 uppercase text-xs hover:bg-red-500 hover:text-white transition-all border border-red-500/20"
               >
@@ -358,6 +489,130 @@ export const LobbyScreen: React.FC<Props> = ({ onBack, onStart, onNavigate }) =>
           </div>
         </div>
       )}
-    </div>
+
+      {showInviteModal && (
+        <div className="fixed inset-0 z-[110] bg-black/95 backdrop-blur-xl flex flex-col p-6 animate-in fade-in duration-300" onClick={() => setShowInviteModal(false)}>
+          <div className="max-w-sm w-full mx-auto mt-20 bg-surface-dark border border-white/10 rounded-[2.5rem] flex flex-col overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+            <header className="p-6 border-b border-white/5 flex items-center justify-between">
+              <h3 className="text-lg font-black italic uppercase italic">Convidar Amigos</h3>
+              <button onClick={() => setShowInviteModal(false)} className="size-10 bg-white/5 rounded-full flex items-center justify-center">
+                <span className="material-symbols-outlined text-white/40">close</span>
+              </button>
+            </header>
+
+            <main className="p-4 max-h-[60vh] overflow-y-auto space-y-3">
+              {friends.length === 0 && (
+                <div className="py-20 text-center opacity-20">
+                  <span className="material-symbols-outlined text-4xl mb-2">person_off</span>
+                  <p className="text-[10px] font-black uppercase tracking-widest">Nenhum amigo na lista</p>
+                </div>
+              )}
+              {friends.map((f: any) => {
+                const alreadyIn = accepted.some(p => p.user_id === f.friend_id) || room.host_id === f.friend_id;
+                return (
+                  <div key={f.id} className={`p-4 rounded-3xl border ${alreadyIn ? 'opacity-40 bg-white/5 border-transparent' : 'bg-white/5 border-white/5'} flex items-center gap-4`}>
+                    <img src={f.friend_profiles?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100'} className="size-10 rounded-full" />
+                    <div className="flex-1">
+                      <p className="font-black italic text-sm">{f.friend_profiles?.username}</p>
+                      {alreadyIn && <p className="text-[8px] font-black text-green-500 uppercase tracking-widest mt-0.5">Já na mesa</p>}
+                    </div>
+                    {!alreadyIn && (
+                      <button
+                        onClick={async () => {
+                          if (!roomId) return;
+                          await sendInvite(roomId, f.friend_id);
+                          useNotificationStore.getState().show("Convite enviado!", 'success');
+                        }}
+                        className="bg-primary text-white text-[10px] font-black px-4 py-2 rounded-lg active:scale-90 transition-all"
+                      >
+                        CONVIDAR
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+            </main>
+
+            <footer className="p-4 border-t border-white/5">
+              <button onClick={() => setShowInviteModal(false)} className="w-full h-14 bg-white/5 text-white/40 font-black rounded-2xl uppercase text-[10px] tracking-widest">FECHAR</button>
+            </footer>
+          </div>
+        </div>
+      )}
+
+      {showExitConfirm && (
+        <div className="fixed inset-0 z-[150] bg-black/90 backdrop-blur-md flex items-center justify-center p-6" onClick={() => setShowExitConfirm(false)}>
+          <div className="bg-surface-dark border border-white/10 p-8 rounded-[3rem] w-full max-w-sm text-center shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="size-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6">
+              <span className="material-symbols-outlined text-primary text-4xl">logout</span>
+            </div>
+            <h3 className="text-2xl font-black italic mb-2">Deseja Sair?</h3>
+            <p className="text-sm text-white/40 mb-8 px-4">Você pode sair temporariamente para ver outras telas ou abandonar a mesa definitivamente.</p>
+
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => onBack()}
+                className="w-full h-16 bg-white/5 text-white font-black rounded-2xl flex items-center justify-center gap-2 border border-white/5 active:scale-95 transition-all"
+              >
+                SAIR TEMPORARIAMENTE
+              </button>
+              <button
+                onClick={handleLeavePermanent}
+                className="w-full h-16 bg-red-500/10 text-red-500 font-black rounded-2xl flex items-center justify-center gap-2 border border-red-500/10 active:scale-95 transition-all"
+              >
+                ABANDONAR MESA
+              </button>
+              <button
+                onClick={() => setShowExitConfirm(false)}
+                className="w-full h-16 bg-primary text-white font-black rounded-2xl shadow-xl shadow-primary/20 mt-2"
+              >
+                VOLTAR PARA O LOBBY
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      <FloatingChat bottomOffset={room.host_id === currentUserId ? '128px' : '0px'} />
+
+      {/* Voice Selection Modal */}
+      {showVoiceModal && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-300" onClick={() => setShowVoiceModal(false)}>
+          <div className="bg-surface-dark w-full max-w-sm rounded-[2.5rem] p-8 border border-white/10 shadow-2xl space-y-6" onClick={e => e.stopPropagation()}>
+            <div className="text-center">
+              <span className="material-symbols-outlined text-4xl text-primary mb-2">record_voice_over</span>
+              <h3 className="text-2xl font-black italic">Voz do Locutor</h3>
+              <p className="text-white/40 text-xs">Selecione o estilo da narração</p>
+            </div>
+
+            <div className="space-y-3">
+              {[
+                { id: 'vovo', name: 'Vovô do Bingo', desc: 'Clássico e acolhedor', icon: 'elderly' },
+                { id: 'radio', name: 'Locutor de Rádio', desc: 'Energia máxima', icon: 'radio' },
+                { id: 'suave', name: 'Voz Suave', desc: 'Partida relaxada', icon: 'sentiment_satisfied' }
+              ].map(voice => (
+                <button
+                  key={voice.id}
+                  onClick={() => { setVoice(voice.id); setShowVoiceModal(false); }}
+                  className={`w-full p-4 rounded-2xl border transition-all flex items-center gap-4 ${selectedVoice === voice.id ? 'bg-primary/10 border-primary text-white' : 'bg-white/5 border-transparent text-white/60'}`}
+                >
+                  <span className="material-symbols-outlined">{voice.icon}</span>
+                  <div className="text-left">
+                    <p className="font-bold text-sm leading-none">{voice.name}</p>
+                    <p className="text-[10px] opacity-40 mt-1">{voice.desc}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setShowVoiceModal(false)}
+              className="w-full h-14 bg-white/5 text-white/40 font-black rounded-2xl uppercase tracking-widest text-[10px]"
+            >
+              FECHAR
+            </button>
+          </div>
+        </div>
+      )}
+    </div >
   );
 };

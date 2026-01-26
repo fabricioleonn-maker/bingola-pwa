@@ -4,6 +4,12 @@ import { supabase } from '../lib/supabase';
 import { useRoomStore } from '../state/roomStore';
 import { useNotificationStore } from '../state/notificationStore';
 import { AppScreen } from '../types';
+import { useAudioStore } from '../state/audioStore';
+import { speakBingoNumber } from '../lib/speechService';
+import { useTutorialStore } from '../state/tutorialStore';
+import { setNoResume, clearBingolaLocalState } from '../state/persist';
+import { useChatStore } from '../state/chatStore';
+import { useFriendshipStore } from '../state/friendshipStore';
 
 interface Props {
   roomInfo: any;
@@ -38,6 +44,9 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
   const [isMaster, setIsMaster] = useState(false);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [newInterval, setNewInterval] = useState(12);
+  const [showVoiceModal, setShowVoiceModal] = useState(false);
+  const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
+  const { selectedVoice, setVoice, isNarrationMuted, toggleNarration } = useAudioStore();
 
   const winnerChannelRef = useRef<any>(null);
   const finishedAlertedRef = useRef(false);
@@ -115,11 +124,25 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
 
   const hostId = (roomInfo as any)?.host_id ?? (roomInfo as any)?.hostId;
   const isHost = !!currentUserId && !!hostId && currentUserId === hostId;
-  // Render Check: Logic only (Return moved to bottom to fix Hooks rule)
+
   // Render Check: Logic only
   const dataReady = acceptedList.length > 0 || realtimeStatus === 'SUBSCRIBED';
   const amIAccepted = acceptedList.some(p => p.user_id === currentUserId && p.status === 'accepted');
   const showLoader = !isHost && (!!roomId) && (!currentUserId || !dataReady || !amIAccepted);
+
+  // Diagnostic Log for Master/Host Access
+  useEffect(() => {
+    if (currentUserId || roomId) {
+      console.log("[Game] Status:", {
+        userId: currentUserId,
+        hostId,
+        isHost,
+        roomId,
+        roomStatus: roomInfo?.status,
+        loaderActive: showLoader
+      });
+    }
+  }, [currentUserId, hostId, isHost, roomId, roomInfo?.status, showLoader]);
 
   const roundNumber = roomInfo?.current_round || 1;
   const totalRounds = roomInfo?.rounds || 1;
@@ -136,6 +159,12 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
   useEffect(() => {
     // If we already loaded this exact key, do nothing unless grid is empty
     if (loadedGridKeyRef.current === gridKey && grid.length > 0) return;
+
+    // Auto-pause music on game entry (User preference for silence during raffle)
+    // But allow manual resume via settings since we removed the lock in BackgroundMusic
+    if (useAudioStore.getState().isPlaying) {
+      useAudioStore.getState().togglePlay();
+    }
 
     const savedGrid = localStorage.getItem(gridKey);
     if (savedGrid) {
@@ -337,6 +366,36 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
     };
   }, [roomId, claimedKey]);
 
+  const { playSfx } = useAudioStore();
+  const lastAudioNumRef = useRef<number | null>(null);
+  const isDrumPlayingRef = useRef(false);
+
+  // Raffling Audio Logic
+  useEffect(() => {
+    if (drawnNumbers.length === 0 || isPaused) return;
+
+    const lastDrawTimeStr = roomInfo?.updated_at || localStorage.getItem('bingola_last_draw_time');
+    const lastDraw = lastDrawTimeStr ? new Date(lastDrawTimeStr).getTime() : Date.now();
+    const now = Date.now();
+    const elapsedSinceDraw = now - lastDraw;
+    const isDrumRoll = elapsedSinceDraw < 3000;
+    const currentNum = drawnNumbers[drawnNumbers.length - 1];
+
+    if (isDrumRoll && !isDrumPlayingRef.current) {
+      isDrumPlayingRef.current = true;
+      playSfx('drum');
+    }
+
+    if (!isDrumRoll && lastAudioNumRef.current !== currentNum) {
+      isDrumPlayingRef.current = false;
+      lastAudioNumRef.current = currentNum;
+      playSfx('drop');
+      setTimeout(() => {
+        speakBingoNumber(currentNum, isNarrationMuted, selectedVoice);
+      }, 500);
+    }
+  }, [drawnNumbers.length, roomInfo?.updated_at, isPaused, playSfx, isNarrationMuted]);
+
   // Sync timer with Server Timestamp
   useEffect(() => {
     const interval = setInterval(() => {
@@ -534,9 +593,9 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
     await supabase.from('rooms').update({ status: 'finished' }).eq('id', roomId);
 
     // 2. Clear local limits and state
+    setNoResume();
+    clearBingolaLocalState();
     useRoomStore.getState().setRoomId(null);
-    localStorage.removeItem('bingola_game_running');
-    localStorage.removeItem('bingola_active_room_id');
 
     // 3. Navigate back
     onBack();
@@ -666,11 +725,63 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
 
   const lastNum = drawnNumbers[drawnNumbers.length - 1] || null;
 
+
+  useEffect(() => {
+    // If we already loaded this exact key, do nothing unless grid is empty
+    if (loadedGridKeyRef.current === gridKey && grid.length > 0) return;
+
+    // Auto-pause music on game entry
+    if (useAudioStore.getState().isPlaying) {
+      useAudioStore.getState().togglePlay();
+    }
+
+    // CRITICAL FIX: Force refresh participants on mount to ensure local store is in sync
+    // This prevents 'showLoader' from sticking to true if the store is empty
+    if (roomId) {
+      useRoomStore.getState().refreshParticipants(roomId);
+    }
+
+    const savedGrid = localStorage.getItem(gridKey);
+    if (savedGrid) {
+      setGrid(JSON.parse(savedGrid));
+    } else {
+      // Only generate if we don't have a saved one
+      const newGrid = generateGrid();
+      setGrid(newGrid);
+      localStorage.setItem(gridKey, JSON.stringify(newGrid));
+    }
+
+    loadedGridKeyRef.current = gridKey;
+
+    setMarked(JSON.parse(localStorage.getItem(markedKey) || '[]'));
+    setClaimedPrizes(JSON.parse(localStorage.getItem(claimedKey) || '[]'));
+  }, [gridKey, markedKey, claimedKey, generateGrid]);
+
   if (showLoader) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-background-dark text-white/50 space-y-4">
-        <div className="size-16 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-        <p className="font-black italic animate-pulse">Verificando Permissão...</p>
+      <div className="flex flex-col items-center justify-center min-h-screen bg-background-dark text-white/50 space-y-4 px-6 text-center">
+        <div className="relative">
+          <div className="size-20 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="material-symbols-outlined text-primary/30 animate-pulse">check_circle</span>
+          </div>
+        </div>
+        <div className="space-y-1">
+          <p className="font-display font-black italic text-lg uppercase tracking-widest text-white/80">Sincronizando Mesa...</p>
+          <p className="text-[10px] uppercase font-bold tracking-[0.2em] opacity-40">Verificando sua participação no Bingo</p>
+        </div>
+        <button
+          onClick={() => {
+            useNotificationStore.getState().confirm({
+              title: "Recarregar?",
+              message: "Deseja forçar a atualização dos dados? Isso pode resolver problemas de carregamento.",
+              onConfirm: () => window.location.reload()
+            });
+          }}
+          className="h-10 px-6 bg-white/5 border border-white/10 rounded-full text-[10px] underline mt-8 opacity-50 hover:opacity-100 uppercase tracking-widest font-black transition-all"
+        >
+          Demorando muito? Clique aqui
+        </button>
       </div>
     );
   }
@@ -683,18 +794,17 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
         <div className="absolute bottom-[-10%] left-[-10%] w-[500px] h-[500px] bg-blue-500/10 rounded-full blur-[100px] animate-pulse delay-1000"></div>
       </div>
 
-      <header className="relative z-10 px-6 pt-6 pb-2 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button onClick={() => setShowExitConfirm(true)} className="size-12 bg-white/5 rounded-2xl flex items-center justify-center text-white/60 active:scale-95 transition-all z-50">
+      <header className="relative z-10 px-4 pt-4 pb-2 flex flex-col gap-4">
+        {/* Horizontal Action Bar - Unified & Scrollable */}
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1 px-1 -mx-4 px-5">
+          <button onClick={() => setShowExitConfirm(true)} className="size-11 shrink-0 bg-white/5 rounded-2xl flex items-center justify-center text-white/60 active:scale-95 transition-all shadow-sm border border-white/5">
             <span className="material-symbols-outlined">arrow_back</span>
           </button>
 
-          {/* Info/Rules Button - Restored */}
-          <button onClick={() => setShowRulesInfo(true)} className="size-12 bg-white/5 rounded-2xl flex items-center justify-center text-white/60 active:scale-95 transition-all z-50">
+          <button onClick={() => setShowRulesInfo(true)} className="size-11 shrink-0 bg-white/5 rounded-2xl flex items-center justify-center text-white/60 active:scale-95 transition-all shadow-sm border border-white/5">
             <span className="material-symbols-outlined">info</span>
           </button>
 
-          {/* MASTER DEBUG BUTTON */}
           {isMaster && (
             <button
               onClick={async () => {
@@ -705,44 +815,78 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
                   updated_at: new Date().toISOString()
                 }).eq('id', roomId);
               }}
-              className="mr-2 size-12 bg-yellow-500/20 rounded-2xl flex items-center justify-center text-yellow-500 active:scale-95 transition-all border border-yellow-500/30 z-50"
+              className="size-11 shrink-0 bg-yellow-500/20 rounded-2xl flex items-center justify-center text-yellow-500 active:scale-95 transition-all border border-yellow-500/30"
             >
               <span className="material-symbols-outlined">bolt</span>
             </button>
           )}
-        </div>
 
-        <div className="flex items-center gap-3">
-          {/* Pause/Resume Button (Host Only) */}
-          {isHost && (
-            <button onClick={togglePause} className="size-12 bg-white/5 rounded-2xl flex items-center justify-center text-white/60 active:scale-95 transition-all border border-white/5">
-              <span className="material-symbols-outlined">{isPaused ? 'play_arrow' : 'pause'}</span>
+          <button onClick={() => onNavigate('chat')} className="size-11 shrink-0 bg-white/5 rounded-2xl flex items-center justify-center text-white/60 active:scale-95 transition-all border border-white/5 shadow-sm">
+            <span className="material-symbols-outlined text-lg">chat</span>
+          </button>
+
+          {/* Voice Controls */}
+          <div className="flex shrink-0 items-center gap-1 bg-white/5 p-1 rounded-2xl border border-white/5">
+            <button
+              onClick={toggleNarration}
+              className={`size-9 rounded-xl flex items-center justify-center transition-all ${isNarrationMuted ? 'text-white/20' : 'bg-primary/20 text-primary'}`}
+            >
+              <span className="material-symbols-outlined text-lg">
+                {isNarrationMuted ? 'volume_off' : 'record_voice_over'}
+              </span>
             </button>
-          )}
+            <button
+              onClick={() => setShowVoiceModal(true)}
+              className="size-9 rounded-xl flex items-center justify-center text-white/40 active:scale-95"
+            >
+              <span className="material-symbols-outlined text-lg">settings</span>
+            </button>
+          </div>
 
-          {/* Lucky Color Button */}
           <button
             onClick={() => onNavigate('customization')}
-            className="size-12 bg-white/5 rounded-2xl flex items-center justify-center text-primary border border-white/5 active:scale-95 transition-all"
+            className="size-11 shrink-0 bg-white/5 rounded-2xl flex items-center justify-center text-primary border border-white/5 active:scale-95 transition-all shadow-sm"
           >
-            <span className="material-symbols-outlined">palette</span>
+            <span className="material-symbols-outlined text-lg">palette</span>
           </button>
 
           {isHost && (
-            <button onClick={() => setShowAuthModal(true)} className="size-12 bg-white/5 rounded-2xl flex items-center justify-center text-white/60 active:scale-95 transition-all relative">
-              <span className="material-symbols-outlined">group</span>
-              {pendingRequests.length > 0 && (
-                <span className="absolute -top-1 -right-1 size-5 bg-primary text-white text-[10px] font-black rounded-full flex items-center justify-center animate-bounce border-2 border-background-dark">
-                  {pendingRequests.length}
-                </span>
-              )}
-            </button>
+            <>
+              <button
+                onClick={togglePause}
+                className={`size-11 shrink-0 bg-white/5 rounded-2xl flex items-center justify-center transition-all border border-white/5 shadow-sm ${isPaused ? 'text-green-500 bg-green-500/10' : 'text-white/60'}`}
+              >
+                <span className="material-symbols-outlined text-lg">{isPaused ? 'play_arrow' : 'pause'}</span>
+              </button>
+
+              <button onClick={() => setShowAuthModal(true)} className="size-11 shrink-0 bg-white/5 rounded-2xl flex items-center justify-center text-white/60 active:scale-95 transition-all relative border border-white/5 shadow-sm">
+                <span className="material-symbols-outlined text-lg">group</span>
+                {pendingRequests.length > 0 && (
+                  <span className="absolute -top-1 -right-1 size-5 bg-primary text-white text-[10px] font-black rounded-full flex items-center justify-center animate-bounce border-2 border-background-dark">
+                    {pendingRequests.length}
+                  </span>
+                )}
+              </button>
+
+              <button onClick={() => setShowEndGameModal(true)} className="size-11 shrink-0 bg-red-500/10 rounded-2xl flex items-center justify-center text-red-500 active:scale-95 transition-all border border-red-500/20 shadow-sm">
+                <span className="material-symbols-outlined text-lg">power_settings_new</span>
+              </button>
+            </>
           )}
-          {isHost && (
-            <button onClick={() => setShowEndGameModal(true)} className="size-12 bg-red-500/10 rounded-2xl flex items-center justify-center text-red-500 active:scale-95 transition-all">
-              <span className="material-symbols-outlined">power_settings_new</span>
-            </button>
-          )}
+
+        </div>
+
+        {/* Improved Room Info Header */}
+        <div className="flex items-center justify-between px-1">
+          <div className="flex flex-col">
+            <span className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] leading-none mb-1">CÓDIGO DA MESA</span>
+            <span className="font-display font-black text-lg text-primary truncate max-w-[200px]">{roomInfo?.code || '---'}</span>
+          </div>
+
+          <div className="flex flex-col items-end">
+            <span className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] leading-none mb-1">HOST</span>
+            <span className="text-xs font-bold text-white/60">{isHost ? 'Você' : (roomInfo as any)?.host_name || 'Anfitrião'}</span>
+          </div>
         </div>
       </header>
 
@@ -1028,13 +1172,23 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
                   {acceptedList.length === 0 && !isHost ? (
                     <p className="text-center text-white/30 text-[10px] py-4 italic">Nenhum outro jogador.</p>
                   ) : acceptedList.map(p => (
-                    <div key={p.id} className="flex items-center justify-between bg-white/5 p-4 rounded-2xl opacity-60">
+                    <button
+                      key={p.id}
+                      onClick={() => setSelectedPlayer({
+                        userId: p.user_id,
+                        name: p.profiles?.username || 'Jogador',
+                        avatar: p.profiles?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100',
+                        level: p.profiles?.level || 1,
+                        bcoins: p.profiles?.bcoins || 0
+                      })}
+                      className="w-full flex items-center justify-between bg-white/5 p-4 rounded-2xl active:scale-[0.98] transition-all hover:bg-white/[0.08]"
+                    >
                       <div className="flex items-center gap-3">
                         <img src={p.profiles?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100'} className="size-10 rounded-full grayscale" alt="Player Avatar" />
                         <span className="font-bold text-sm text-white/70">{p.profiles?.username || 'Jogador'}</span>
                       </div>
                       <span className="material-symbols-outlined text-green-500/40 text-sm">check_circle</span>
-                    </div>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -1161,60 +1315,200 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
               </div>
             </div>
           </div>
-        )}
+        )
+      }
       {/* Exit Confirmation Modal */}
-      {showExitConfirm && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-surface-dark w-full max-w-sm rounded-[2rem] p-6 border border-white/10 shadow-2xl space-y-4">
-            <div className="text-center space-y-2">
-              <div className="size-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="material-symbols-outlined text-3xl text-white">logout</span>
+      {
+        showExitConfirm && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-surface-dark w-full max-w-sm rounded-[2rem] p-6 border border-white/10 shadow-2xl space-y-4">
+              <div className="text-center space-y-2">
+                <div className="size-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <span className="material-symbols-outlined text-3xl text-white">logout</span>
+                </div>
+                <h3 className="text-xl font-black text-white">Sair da Mesa?</h3>
+                <p className="text-white/60 text-sm">Você pode sair temporariamente ou encerrar a mesa.</p>
               </div>
-              <h3 className="text-xl font-black text-white">Sair da Mesa?</h3>
-              <p className="text-white/60 text-sm">Você pode sair temporariamente ou encerrar a mesa.</p>
+
+              <div className="grid gap-3 pt-2">
+                <button
+                  onClick={() => {
+                    setShowExitConfirm(false);
+                    onBack(); // Just navigate back, treated as temporary exit
+                  }}
+                  className="w-full h-14 bg-white/5 hover:bg-white/10 rounded-xl font-bold text-white transition-all flex items-center justify-center gap-2"
+                >
+                  Sair Temporariamente
+                </button>
+
+                {!isHost && (
+                  <button
+                    onClick={handleLeavePermanent}
+                    className="w-full h-14 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-xl font-bold transition-all flex items-center justify-center gap-2"
+                  >
+                    <span className="material-symbols-outlined">exit_to_app</span>
+                    Sair Definitivamente
+                  </button>
+                )}
+
+                {isHost && (
+                  <button
+                    onClick={confirmEndGame}
+                    className="w-full h-14 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-xl font-bold transition-all flex items-center justify-center gap-2"
+                  >
+                    <span className="material-symbols-outlined">power_settings_new</span>
+                    Encerrar Mesa
+                  </button>
+                )}
+
+                <button
+                  onClick={() => setShowExitConfirm(false)}
+                  className="w-full h-12 text-white/40 font-bold hover:text-white transition-colors"
+                >
+                  Cancelar
+                </button>
+              </div>
             </div>
+          </div>
+        )
+      }
+      {/* Voice Selection Modal */}
+      {
+        showVoiceModal && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-300" onClick={() => setShowVoiceModal(false)}>
+            <div className="bg-surface-dark w-full max-w-sm rounded-[2.5rem] p-8 border border-white/10 shadow-2xl space-y-6" onClick={e => e.stopPropagation()}>
+              <div className="text-center">
+                <span className="material-symbols-outlined text-4xl text-primary mb-2">record_voice_over</span>
+                <h3 className="text-2xl font-black italic">Voz do Locutor</h3>
+                <p className="text-white/40 text-xs">Selecione o estilo da narração</p>
+              </div>
 
-            <div className="grid gap-3 pt-2">
+              <div className="space-y-3">
+                {[
+                  { id: 'vovo', name: 'Vovô do Bingo', desc: 'Clássico e acolhedor', icon: 'elderly' },
+                  { id: 'radio', name: 'Locutor de Rádio', desc: 'Energia máxima', icon: 'radio' },
+                  { id: 'suave', name: 'Voz Suave', desc: 'Partida relaxada', icon: 'sentiment_satisfied' }
+                ].map(voice => (
+                  <button
+                    key={voice.id}
+                    onClick={() => { setVoice(voice.id); setShowVoiceModal(false); }}
+                    className={`w-full p-4 rounded-2xl border transition-all flex items-center gap-4 ${selectedVoice === voice.id ? 'bg-primary/10 border-primary text-white' : 'bg-white/5 border-transparent text-white/60'}`}
+                  >
+                    <span className="material-symbols-outlined">{voice.icon}</span>
+                    <div className="text-left">
+                      <p className="font-bold text-sm leading-none">{voice.name}</p>
+                      <p className="text-[10px] opacity-40 mt-1">{voice.desc}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
               <button
-                onClick={() => {
-                  setShowExitConfirm(false);
-                  onBack(); // Just navigate back, treated as temporary exit
-                }}
-                className="w-full h-14 bg-white/5 hover:bg-white/10 rounded-xl font-bold text-white transition-all flex items-center justify-center gap-2"
+                onClick={() => setShowVoiceModal(false)}
+                className="w-full h-14 bg-white/5 text-white/40 font-black rounded-2xl uppercase tracking-widest text-[10px]"
               >
-                Sair Temporariamente
-              </button>
-
-              {!isHost && (
-                <button
-                  onClick={handleLeavePermanent}
-                  className="w-full h-14 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-xl font-bold transition-all flex items-center justify-center gap-2"
-                >
-                  <span className="material-symbols-outlined">exit_to_app</span>
-                  Sair Definitivamente
-                </button>
-              )}
-
-              {isHost && (
-                <button
-                  onClick={confirmEndGame}
-                  className="w-full h-14 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-xl font-bold transition-all flex items-center justify-center gap-2"
-                >
-                  <span className="material-symbols-outlined">power_settings_new</span>
-                  Encerrar Mesa
-                </button>
-              )}
-
-              <button
-                onClick={() => setShowExitConfirm(false)}
-                className="w-full h-12 text-white/40 font-bold hover:text-white transition-colors"
-              >
-                Cancelar
+                FECHAR
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
+
+      {/* Player Profile Modal (Game Version) */}
+      {
+        selectedPlayer && (
+          <div className="fixed inset-0 z-[250] bg-black/95 backdrop-blur-md flex items-center justify-center p-6" onClick={() => setSelectedPlayer(null)}>
+            <div className="bg-surface-dark border border-white/10 p-8 rounded-[3rem] w-full max-w-sm text-center shadow-2xl relative" onClick={e => e.stopPropagation()}>
+              <button
+                onClick={() => setSelectedPlayer(null)}
+                className="absolute top-6 right-6 size-10 bg-white/5 rounded-full flex items-center justify-center text-white/20"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+
+              <div className="size-24 rounded-full border-4 border-primary/20 mx-auto mb-6 p-1">
+                <img src={selectedPlayer.avatar} className="size-full rounded-full object-cover" alt="Selected Player" />
+              </div>
+              <h3 className="text-2xl font-black italic mb-1">{selectedPlayer.name}</h3>
+              <p className="text-[10px] font-black text-primary uppercase tracking-[0.3em] mb-8">Nível {selectedPlayer.level} • {selectedPlayer.bcoins} BCOINS</p>
+
+              {selectedPlayer.userId !== currentUserId && (
+                <div className="flex flex-col gap-4 w-full">
+                  {/* QUICK MESSAGE BOX */}
+                  <div className="bg-white/5 p-4 rounded-3xl border border-white/10 space-y-3">
+                    <p className="text-[9px] font-bold text-white/30 uppercase tracking-widest text-left ml-2">Mandar um Oi 💨</p>
+                    <div className="relative">
+                      <input
+                        autoFocus
+                        type="text"
+                        placeholder="Alguma mensagem?..."
+                        className="w-full h-12 bg-black/20 border border-white/5 rounded-2xl px-4 pr-12 text-sm font-medium outline-none focus:border-primary/30 transition-all font-sans"
+                        onKeyDown={async (e: any) => {
+                          if (e.key === 'Enter' && e.target.value.trim()) {
+                            const val = e.target.value;
+                            await useChatStore.getState().sendDirectMessage(selectedPlayer.userId, val);
+                            useNotificationStore.getState().show("Mensagem enviada!", 'success');
+                            e.target.value = '';
+                          }
+                        }}
+                      />
+                      <button
+                        onClick={async (e) => {
+                          const input = e.currentTarget.previousSibling as HTMLInputElement;
+                          if (input.value.trim()) {
+                            await useChatStore.getState().sendDirectMessage(selectedPlayer.userId, input.value);
+                            useNotificationStore.getState().show("Mensagem enviada!", 'success');
+                            input.value = '';
+                          }
+                        }}
+                        className="absolute right-1 top-1 size-10 bg-primary/20 text-primary rounded-xl flex items-center justify-center"
+                      >
+                        <span className="material-symbols-outlined text-xl">send</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-3 w-full max-h-[30vh] overflow-y-auto no-scrollbar">
+                    <button
+                      onClick={async () => {
+                        if (!selectedPlayer.userId) return;
+                        await useFriendshipStore.getState().sendRequest(selectedPlayer.userId);
+                        useNotificationStore.getState().show("Pedido enviado!", 'success');
+                        setSelectedPlayer(null);
+                      }}
+                      className="w-full min-h-[56px] bg-white/5 border border-white/5 rounded-2xl flex items-center justify-center gap-2 font-bold active:scale-95 transition-all text-sm uppercase tracking-widest"
+                    >
+                      <span className="material-symbols-outlined text-primary">person_add</span>
+                      ADICIONAR AMIGO
+                    </button>
+
+                    {isHost && selectedPlayer.userId !== currentUserId && (
+                      <button
+                        onClick={async () => {
+                          if (!roomId) return;
+                          await useRoomStore.getState().hardExit(roomId, selectedPlayer.userId);
+                          useNotificationStore.getState().show("Jogador removido!", 'info');
+                          setSelectedPlayer(null);
+                        }}
+                        className="w-full min-h-[56px] bg-red-500/10 border border-red-500/20 text-red-500 rounded-2xl flex items-center justify-center gap-2 font-bold active:scale-95 transition-all text-sm uppercase tracking-widest"
+                      >
+                        <span className="material-symbols-outlined">person_remove</span>
+                        REMOVER DA MESA
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => setSelectedPlayer(null)}
+                      className="w-full min-h-[60px] bg-primary text-white font-bold rounded-2xl mt-4 uppercase tracking-[0.2em] italic"
+                    >
+                      FECHAR
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
     </div>
   );
 };

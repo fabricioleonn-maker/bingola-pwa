@@ -186,16 +186,19 @@ export const GameSettingsScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
       <footer className="p-6 pb-12 bg-background-dark/95 backdrop-blur-md border-t border-white/5 space-y-4">
         <h3 className="text-[10px] font-black uppercase tracking-widest text-red-500/50 pl-2">Zona de Perigo</h3>
         <button
-          onClick={async () => {
-            if (window.confirm("Deseja realmente encerrar a mesa? Isso irá desconectar todos os jogadores.")) {
-              if (room?.id) {
-                await supabase.from('rooms').update({ status: 'finished' }).eq('id', room.id);
-                // Watchdog will handle cleanup, but we can fast-track
-                await supabase.from('participants').delete().eq('room_id', room.id);
-                useRoomStore.getState().setRoomId(null);
-                onNavigate('home');
+          onClick={() => {
+            useNotificationStore.getState().confirm({
+              title: "Encerrar Mesa?",
+              message: "Deseja realmente encerrar a mesa? Isso irá desconectar todos os jogadores.",
+              onConfirm: async () => {
+                if (room?.id) {
+                  await supabase.from('rooms').update({ status: 'finished' }).eq('id', room.id);
+                  await supabase.from('participants').delete().eq('room_id', room.id);
+                  useRoomStore.getState().setRoomId(null);
+                  onNavigate('home');
+                }
               }
-            }
+            });
           }}
           className="w-full h-14 bg-red-500/10 border border-red-500/20 text-red-500 font-black rounded-2xl uppercase text-xs hover:bg-red-500 hover:text-white transition-all"
         >

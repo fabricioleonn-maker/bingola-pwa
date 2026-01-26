@@ -1,8 +1,14 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { useNotificationStore } from '../state/notificationStore';
 import { AppScreen } from '../types';
 import { useRoomStore } from '../state/roomStore';
+import { useChatStore } from '../state/chatStore';
+import { useFriendshipStore } from '../state/friendshipStore';
+import { FloatingChat } from '../components/FloatingChat';
+import { useAudioStore } from '../state/audioStore';
+import { useTutorialStore } from '../state/tutorialStore';
 
 interface Props {
   onBack: () => void;
@@ -15,6 +21,8 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
   const acceptedList = useRoomStore(s => s.accepted);
   const myStatus = useRoomStore(s => s.myStatus);
   const refreshParticipants = useRoomStore(s => s.refreshParticipants);
+  const sendFriendRequest = useFriendshipStore(s => s.sendRequest);
+  const initiatePrivateChat = useChatStore(s => s.fetchDirectMessages);
 
   const [hostProfile, setHostProfile] = useState<any>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
@@ -83,6 +91,10 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
       onNavigate('game');
     }
   }, [room?.status, onNavigate, myStatus]);
+
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [showVoiceModal, setShowVoiceModal] = useState(false);
+  const { selectedVoice, setVoice, isNarrationMuted, toggleNarration } = useAudioStore();
 
   if (myStatus === 'rejected') {
     return (
@@ -155,20 +167,53 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
     </div>
   );
 
+
+  const handleLeavePermanent = async () => {
+    if (currentUser?.id && roomId) {
+      await useRoomStore.getState().hardExit(roomId, currentUser.id);
+      onNavigate('home');
+    }
+  };
+
+  if (!room) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[100dvh] bg-background-dark p-6 text-center">
+        <div className="size-16 border-4 border-primary/20 border-t-primary rounded-full animate-spin mb-4"></div>
+        <h2 className="text-xl font-black italic uppercase italic text-white/80">Sincronizando Mesa...</h2>
+        <p className="text-white/40 text-xs mt-2 max-w-xs">Aguardando dados da mesa.</p>
+        <button onClick={onBack} className="mt-8 text-white/40 text-[10px] font-black uppercase tracking-widest border border-white/5 px-6 py-2 rounded-xl">Voltar</button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col min-h-[100dvh] bg-background-dark text-white font-sans overflow-x-hidden relative pb-[env(safe-area-inset-bottom)]">
       <header className="sticky top-0 z-40 flex items-center bg-background-dark/90 backdrop-blur-md p-4 justify-between border-b border-white/5">
-        <button onClick={onBack} className="text-white flex size-12 items-center justify-start">
+        <button onClick={() => setShowExitConfirm(true)} className="text-white flex size-12 items-center justify-start">
           <span className="material-symbols-outlined">arrow_back</span>
         </button>
         <div className="text-center flex-1">
           <h2 className="text-[10px] font-black uppercase tracking-widest opacity-40 italic">CÓD MESA: {room.code}</h2>
           <p className="text-lg font-black text-primary truncate leading-tight uppercase italic">{room.name}</p>
         </div>
-        <button id="lobby-personalize-btn" onClick={() => onNavigate('customization')} className="flex flex-col items-center gap-1 text-primary">
-          <span className="material-symbols-outlined text-2xl">palette</span>
-          <span className="text-[8px] font-black uppercase italic tracking-tighter leading-none">Cor da Sorte</span>
-        </button>
+        <div className="flex gap-2">
+          {/* MUSIC PLAYER BUTTON (Restored) */}
+          <button
+            onClick={() => onNavigate('audio_settings')}
+            className="flex size-11 items-center justify-center text-primary bg-primary/10 rounded-xl active:scale-95 transition-all"
+            title="Configurações de Música"
+          >
+            <span className="material-symbols-outlined">music_note</span>
+          </button>
+
+          <button onClick={() => onNavigate('chat')} className="flex size-11 items-center justify-center text-primary bg-primary/10 rounded-xl">
+            <span className="material-symbols-outlined">chat</span>
+          </button>
+          <button id="lobby-personalize-btn" onClick={() => onNavigate('customization')} className="flex flex-col items-center gap-1 text-primary">
+            <span className="material-symbols-outlined text-2xl">palette</span>
+            <span className="text-[8px] font-black uppercase italic tracking-tighter leading-none">Cor da Sorte</span>
+          </button>
+        </div>
       </header>
 
       <main className="flex-1 overflow-y-auto pb-6">
@@ -236,7 +281,8 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
                 name: p.profiles?.username || 'Jogador',
                 avatar: p.profiles?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100',
                 level: p.profiles?.level,
-                bcoins: p.profiles?.bcoins
+                bcoins: p.profiles?.bcoins,
+                id: p.user_id
               })}>
                 <div className="relative p-0.5 rounded-full border-2 border-white/10">
                   <div className="size-14 rounded-full overflow-hidden">
@@ -265,7 +311,41 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
         </div>
       </footer>
 
+      {showExitConfirm && (
+        <div className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-md flex items-center justify-center p-6" onClick={() => setShowExitConfirm(false)}>
+          <div className="bg-surface-dark border border-white/10 p-8 rounded-[3rem] w-full max-w-sm text-center shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="size-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6">
+              <span className="material-symbols-outlined text-primary text-4xl">logout</span>
+            </div>
+            <h3 className="text-2xl font-black italic mb-2">Deseja Sair?</h3>
+            <p className="text-sm text-white/40 mb-8 px-4">Você pode sair temporariamente para ver outras telas ou abandonar a mesa definitivamente.</p>
+
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => onNavigate('home')}
+                className="w-full h-16 bg-white/5 text-white font-black rounded-2xl flex items-center justify-center gap-2 border border-white/5 active:scale-95 transition-all"
+              >
+                SAIR TEMPORARIAMENTE
+              </button>
+              <button
+                onClick={handleLeavePermanent}
+                className="w-full h-16 bg-red-500/10 text-red-500 font-black rounded-2xl flex items-center justify-center gap-2 border border-red-500/10 active:scale-95 transition-all"
+              >
+                ABANDONAR MESA
+              </button>
+              <button
+                onClick={() => setShowExitConfirm(false)}
+                className="w-full h-16 bg-primary text-white font-black rounded-2xl shadow-xl shadow-primary/20 mt-2"
+              >
+                VOLTAR PARA O LOBBY
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {selectedPlayer && (
+        // ... (player profile modal)
         <div className="fixed inset-0 z-[110] bg-black/90 backdrop-blur-md flex items-center justify-center p-6" onClick={() => setSelectedPlayer(null)}>
           <div className="bg-surface-dark border border-white/10 p-8 rounded-[3rem] w-full max-w-sm text-center shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="size-24 rounded-full border-4 border-primary/20 mx-auto mb-6 p-1">
@@ -274,17 +354,29 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
             <h3 className="text-2xl font-black italic mb-1">{selectedPlayer.name}</h3>
             <p className="text-[10px] font-black text-primary uppercase tracking-[0.3em] mb-8">Nível {selectedPlayer.level || 1} • {selectedPlayer.bcoins || 0} BCOINS</p>
 
-            <div className="flex flex-col gap-3 mb-8">
+            <div className="flex flex-col gap-3 mb-8 w-full max-h-[40vh] overflow-y-auto no-scrollbar">
               <button
-                onClick={(e) => { e.stopPropagation(); alert('Em breve: Sistema de Chat'); }}
-                className="w-full h-14 bg-white/5 text-white font-black rounded-2xl flex items-center justify-center gap-2 border border-white/5 active:scale-95 transition-all"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onNavigate('friends');
+                  setSelectedPlayer(null);
+                }}
+                className="w-full min-h-[56px] bg-white/5 text-white font-bold rounded-2xl flex items-center justify-center gap-2 border border-white/5 active:scale-95 transition-all"
               >
                 <span className="material-symbols-outlined text-primary">chat</span>
                 ENVIAR MENSAGEM
               </button>
               <button
-                onClick={(e) => { e.stopPropagation(); alert('Em breve: Adicionar Amigo'); }}
-                className="w-full h-14 bg-white/5 text-white font-black rounded-2xl flex items-center justify-center gap-2 border border-white/5 active:scale-95 transition-all"
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  if (selectedPlayer.id === currentUser?.id) {
+                    useNotificationStore.getState().show('Você já é seu melhor amigo!', 'info');
+                  } else {
+                    await sendFriendRequest(selectedPlayer.id);
+                    useNotificationStore.getState().show('Pedido de amizade enviado!', 'success');
+                  }
+                }}
+                className="w-full min-h-[56px] bg-white/5 text-white font-bold rounded-2xl flex items-center justify-center gap-2 border border-white/5 active:scale-95 transition-all"
               >
                 <span className="material-symbols-outlined text-primary">person_add</span>
                 ADICIONAR AMIGO
@@ -292,6 +384,48 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
             </div>
 
             <button onClick={() => setSelectedPlayer(null)} className="w-full h-16 bg-primary text-white font-black rounded-2xl">FECHAR</button>
+          </div>
+        </div>
+      )}
+
+      <FloatingChat bottomOffset="0px" />
+
+      {/* Voice Selection Modal */}
+      {showVoiceModal && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-300" onClick={() => setShowVoiceModal(false)}>
+          <div className="bg-surface-dark w-full max-w-sm rounded-[2.5rem] p-8 border border-white/10 shadow-2xl space-y-6" onClick={e => e.stopPropagation()}>
+            <div className="text-center">
+              <span className="material-symbols-outlined text-4xl text-primary mb-2">record_voice_over</span>
+              <h3 className="text-2xl font-black italic">Voz do Locutor</h3>
+              <p className="text-white/40 text-xs">Selecione o estilo da narração</p>
+            </div>
+
+            <div className="space-y-3">
+              {[
+                { id: 'vovo', name: 'Vovô do Bingo', desc: 'Clássico e acolhedor', icon: 'elderly' },
+                { id: 'radio', name: 'Locutor de Rádio', desc: 'Energia máxima', icon: 'radio' },
+                { id: 'suave', name: 'Voz Suave', desc: 'Partida relaxada', icon: 'sentiment_satisfied' }
+              ].map(voice => (
+                <button
+                  key={voice.id}
+                  onClick={() => { setVoice(voice.id); setShowVoiceModal(false); }}
+                  className={`w-full p-4 rounded-2xl border transition-all flex items-center gap-4 ${selectedVoice === voice.id ? 'bg-primary/10 border-primary text-white' : 'bg-white/5 border-transparent text-white/60'}`}
+                >
+                  <span className="material-symbols-outlined">{voice.icon}</span>
+                  <div className="text-left">
+                    <p className="font-bold text-sm leading-none">{voice.name}</p>
+                    <p className="text-[10px] opacity-40 mt-1">{voice.desc}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setShowVoiceModal(false)}
+              className="w-full h-14 bg-white/5 text-white/40 font-black rounded-2xl uppercase tracking-widest text-[10px]"
+            >
+              FECHAR
+            </button>
           </div>
         </div>
       )}

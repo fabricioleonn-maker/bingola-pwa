@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { useNotificationStore } from '../state/notificationStore';
 
 interface Props {
   onBack: () => void;
@@ -31,7 +32,7 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
       // Caso explorador sem conta, permitimos "comprar" para testar o app
       const mockBalance = balance + coins;
       setBalance(mockBalance);
-      alert("Simulação: Como você não está logado, adicionamos bcoins temporários para teste.");
+      useNotificationStore.getState().show("Simulação: Como você não está logado, adicionamos bcoins temporários para teste.", 'info');
       return;
     }
 
@@ -42,10 +43,10 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
       .eq('id', profileId);
 
     if (error) {
-      alert("Erro ao processar compra. Tente novamente.");
+      useNotificationStore.getState().show("Erro ao processar compra. Tente novamente.", 'error');
     } else {
       setBalance(newBalance);
-      alert(`Você adquiriu ${coins} BCOINS com sucesso!`);
+      useNotificationStore.getState().show(`Você adquiriu ${coins} BCOINS com sucesso!`, 'success');
     }
   };
 

@@ -11,15 +11,25 @@ export const PersistentGameLoop: React.FC = () => {
     const [isPaused, setIsPaused] = useState(localStorage.getItem('bingola_is_paused') === 'true');
 
     useEffect(() => {
+        // Initial user fetch
         supabase.auth.getUser().then(({ data: { user } }) => {
             if (user) setCurrentUserId(user.id);
+        });
+
+        // Listen for auth changes (CRITICAL: fixes "draw only after refresh" issue)
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            setCurrentUserId(session?.user?.id || null);
         });
 
         const handleStorage = () => {
             setIsPaused(localStorage.getItem('bingola_is_paused') === 'true');
         };
         window.addEventListener('storage', handleStorage);
-        return () => window.removeEventListener('storage', handleStorage);
+
+        return () => {
+            window.removeEventListener('storage', handleStorage);
+            subscription.unsubscribe();
+        };
     }, []);
 
     // Poll for local storage pause changes (since storage event is only for OTHER tabs)

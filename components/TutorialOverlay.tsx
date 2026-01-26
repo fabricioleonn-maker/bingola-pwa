@@ -103,12 +103,17 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ onNavigate }) => {
 
             try {
                 setDucked(true);
+                console.log(`[Tutorial] Playing audio for step ${currentStep} (index ${index})`);
                 await audio.play();
                 audio.onended = () => {
                     const latestStep = useTutorialStore.getState().currentStep;
-                    // Auto-advance logic: 1:Intro, 2:Create, 3:Config, 4:Open, 5:HostLobby, 8:PlayerLobby(Audio 6 Ends), 9:Encerramento
+                    console.log(`[Tutorial] Audio ended for step ${latestStep}`);
+
+                    // Auto-advance logic: 1:Intro, 2:Create, 3:Config, 4:Open, 5:HostLobby, 8:PlayerLobby, 9:Encerramento
+                    // Steps 6 and 7 have specialized timer-based logic.
                     const triggerSteps = [1, 2, 3, 4, 5, 8, 9];
                     if (triggerSteps.includes(latestStep)) {
+                        console.log(`[Tutorial] Auto-advancing from step ${latestStep}`);
                         if (latestStep === 9) finishTutorial();
                         else nextStep();
                     }

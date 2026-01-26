@@ -1,5 +1,9 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useChatStore } from '../state/chatStore';
+import { useRoomStore } from '../state/roomStore';
+import { supabase } from '../lib/supabase';
+import { useNotificationStore } from '../state/notificationStore';
+import { useFriendshipStore } from '../state/friendshipStore';
 
 interface Props {
   onBack: () => void;
@@ -7,82 +11,242 @@ interface Props {
 
 export const ChatScreen: React.FC<Props> = ({ onBack }) => {
   const [msg, setMsg] = useState('');
+  const roomId = useRoomStore(s => s.roomId);
+  const room = useRoomStore(s => s.room);
+  const acceptedList = useRoomStore(s => s.accepted);
+  const messages = useChatStore(s => s.roomMessages);
+  const subscribe = useChatStore(s => s.subscribeToRoom);
+  const sendMessage = useChatStore(s => s.sendMessageToRoom);
+  const directMessages = useChatStore(s => s.directMessages);
+  const sendDM = useChatStore(s => s.sendDirectMessage);
+
+  const [activeTab, setActiveTab] = useState<'table' | 'private'>('table');
+  const [selectedFriendId, setSelectedFriendId] = useState<string | null>(null);
+
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      setCurrentUserId(data.user?.id || null);
+    });
+  }, []);
+
+  const subscribeDMs = useChatStore(s => s.subscribeToDirectMessages);
+  const fetchDMs = useChatStore(s => s.fetchDirectMessages);
+  const friends = useFriendshipStore(s => s.friends);
+
+  useEffect(() => {
+    // Subscribe to DMs for ALL current friends to ensure we receive messages in the "Private Chat" tab
+    const unsubscribes = friends.map(f => subscribeDMs(f.friend_id));
+
+    // Also fetch existing ones
+    friends.forEach(f => fetchDMs(f.friend_id));
+
+    return () => unsubscribes.forEach(unsub => unsub());
+  }, [friends, subscribeDMs, fetchDMs]);
+
+  useEffect(() => {
+    if (roomId) {
+      const unsubscribe = subscribe(roomId);
+      return () => unsubscribe();
+    }
+  }, [roomId, subscribe]);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages, directMessages, selectedFriendId, activeTab]);
+
+  const handleSend = async () => {
+    if (!msg.trim()) return;
+    if (activeTab === 'table') {
+      if (!roomId) return;
+      await sendMessage(roomId, msg);
+    } else {
+      if (!selectedFriendId) {
+        useNotificationStore.getState().show("Selecione um amigo na lista para enviar mensagem.", 'info');
+        return;
+      }
+      await sendDM(selectedFriendId, msg);
+    }
+    setMsg('');
+  };
 
   return (
-    <div className="bg-background-light dark:bg-background-dark text-[#181511] dark:text-[#f8f7f5] min-h-screen flex flex-col font-display">
-      <header className="sticky top-0 z-50 bg-white/80 dark:bg-background-dark/80 backdrop-blur-md border-b border-gray-100 dark:border-gray-800">
+    <div className="bg-background-dark text-white min-h-[100dvh] flex flex-col font-sans pb-[env(safe-area-inset-bottom)]">
+      <header className="sticky top-0 z-50 bg-background-dark/90 backdrop-blur-md border-b border-white/5">
         <div className="flex items-center p-4 pb-2 justify-between">
-          <button onClick={onBack} className="text-[#181511] dark:text-white flex size-10 items-center justify-center">
-            <span className="material-symbols-outlined">arrow_back_ios</span>
+          <button onClick={onBack} className="text-white flex size-12 items-center justify-start">
+            <span className="material-symbols-outlined">arrow_back</span>
           </button>
           <div className="flex flex-col items-center flex-1">
-            <h2 className="text-lg font-bold">Chat do Bingo</h2>
-            <span className="text-xs text-green-500 font-medium flex items-center gap-1">
-              <span className="size-2 bg-green-500 rounded-full animate-pulse"></span> 124 Jogando
+            <h2 className="text-lg font-bold italic uppercase tracking-tighter">Chat da Mesa</h2>
+            <span className="text-[10px] text-primary font-bold uppercase tracking-widest flex items-center gap-1.5">
+              <span className="size-1.5 bg-primary rounded-full animate-pulse shadow-[0_0_8px_rgba(255,61,113,0.8)]"></span>
+              {acceptedList.length + (room?.host_id ? 1 : 0)} Jogando
             </span>
           </div>
-          <button className="w-10 h-10 flex items-center justify-end">
+          <button className="size-12 flex items-center justify-end text-white/20">
             <span className="material-symbols-outlined">info</span>
           </button>
         </div>
 
-        <div className="px-4 py-3 flex items-center gap-3 overflow-x-auto no-scrollbar">
-          <div className="flex min-w-[120px] flex-col gap-1 rounded-xl p-3 bg-primary text-white shadow-lg shadow-primary/20">
-            <p className="text-[10px] font-bold uppercase tracking-wider opacity-80">Atual</p>
-            <p className="text-3xl font-black leading-none">B-12</p>
-          </div>
-          <div className="flex-1 flex flex-col gap-1">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-[#8a7960] dark:text-gray-400">Anteriores</p>
-            <div className="flex gap-2">
-              <span className="size-8 rounded-full bg-[#f5f3f0] dark:bg-gray-800 flex items-center justify-center text-sm font-bold">G48</span>
-              <span className="size-8 rounded-full bg-[#f5f3f0] dark:bg-gray-800 flex items-center justify-center text-sm font-bold">I22</span>
-              <span className="size-8 rounded-full bg-[#f5f3f0] dark:bg-gray-800 flex items-center justify-center text-sm font-bold opacity-60">O61</span>
-            </div>
-          </div>
+        {/* Tab Selection */}
+        <div className="px-4 py-3 flex gap-2">
+          <button
+            onClick={() => { setActiveTab('table'); setSelectedFriendId(null); }}
+            className={`flex-1 py-8 rounded-3xl flex flex-col items-center justify-center gap-1 border transition-all ${activeTab === 'table' ? 'bg-primary border-primary shadow-lg shadow-primary/20' : 'bg-white/5 border-white/10 opacity-40'}`}
+          >
+            <span className="text-[10px] font-bold uppercase tracking-widest leading-none">Mesa Atual</span>
+            <p className="text-lg font-bold italic uppercase truncate px-2 w-full text-center">
+              {room?.name || 'Mesa'}
+            </p>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('private')}
+            className={`flex-1 py-8 rounded-3xl flex flex-col items-center justify-center gap-1 border transition-all ${activeTab === 'private' ? 'bg-primary border-primary shadow-lg shadow-primary/20' : 'bg-white/5 border-white/10 opacity-40'}`}
+          >
+            <span className="text-[10px] font-bold uppercase tracking-widest leading-none">Social</span>
+            <p className="text-lg font-bold italic uppercase">Conversas</p>
+          </button>
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto p-4 space-y-4 w-full">
-        <div className="flex justify-center">
-          <div className="bg-gray-100 dark:bg-gray-800/50 px-4 py-1 rounded-full text-[11px] font-medium text-gray-400 uppercase tracking-widest">A partida começou!</div>
-        </div>
+      <main ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 w-full">
+        {activeTab === 'table' ? (
+          <>
+            {messages.length === 0 && (
+              <div className="flex flex-col items-center justify-center h-48 opacity-20">
+                <span className="material-symbols-outlined text-4xl mb-2">forum</span>
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em]">Silêncio na mesa...</p>
+              </div>
+            )}
 
-        <div className="flex items-end gap-3">
-          <img src="https://picsum.photos/100/100?random=1" className="size-10 rounded-full border-2 border-white dark:border-gray-700" />
-          <div className="flex flex-1 flex-col gap-1 items-start">
-            <p className="text-primary text-[11px] font-bold ml-1">Maria Oliveira</p>
-            <div className="max-w-[85%] rounded-2xl rounded-bl-none px-4 py-3 bg-white dark:bg-gray-800 shadow-sm border border-gray-100 dark:border-gray-700">
-              <p className="text-base font-normal text-gray-200">Vem o 22! Só falta ele pra fechar a coluna!</p>
-            </div>
-          </div>
-        </div>
+            {messages.map((m: any, i) => {
+              const isMe = m.user_id === currentUserId;
+              return (
+                <div key={m.id || i} className={`flex items-end gap-3 ${isMe ? 'justify-end' : ''}`}>
+                  {!isMe && (
+                    <img src={m.profiles?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100'} className="size-8 rounded-full border border-white/10" />
+                  )}
+                  <div className={`flex flex-col gap-1 ${isMe ? 'items-end' : 'items-start'}`}>
+                    {!isMe && <p className="text-white/40 text-[9px] font-bold uppercase tracking-wider ml-1">{m.profiles?.username || 'Jogador'}</p>}
+                    <div className={`max-w-[240px] px-4 py-3 rounded-2xl shadow-sm ${isMe ? 'bg-primary text-white rounded-br-none' : 'bg-white/5 text-white/90 border border-white/10 rounded-bl-none'}`}>
+                      <p className="text-sm font-medium leading-relaxed">{m.content}</p>
+                    </div>
+                  </div>
+                  {isMe && (
+                    <img src={m.profiles?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100'} className="size-8 rounded-full border border-primary/30" />
+                  )}
+                </div>
+              );
+            })}
+          </>
+        ) : (
+          <div className="w-full">
+            {!selectedFriendId ? (
+              <div className="space-y-2">
+                <p className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em] mb-4 ml-1">Seus Amigos</p>
+                {friends.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-48 opacity-20">
+                    <span className="material-symbols-outlined text-4xl mb-2">person_off</span>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.2em]">Sem amigos online...</p>
+                  </div>
+                ) : (
+                  friends.map(f => {
+                    const friendMessages = directMessages[f.friend_id] || [];
+                    const lastMsg = friendMessages[friendMessages.length - 1];
+                    return (
+                      <button
+                        key={f.id}
+                        onClick={() => setSelectedFriendId(f.friend_id)}
+                        className="w-full bg-white/5 border border-white/5 p-4 rounded-2xl flex items-center gap-4 active:bg-white/10 transition-all text-left"
+                      >
+                        <img src={f.friend_profiles?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100'} className="size-12 rounded-full border border-white/10" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white font-bold truncate tracking-tight">{f.friend_profiles?.username}</p>
+                          <p className="text-white/40 text-xs truncate">
+                            {lastMsg ? lastMsg.content : 'Inicie uma conversa...'}
+                          </p>
+                        </div>
+                        <span className="material-symbols-outlined text-white/20 text-sm">chevron_right</span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 mb-6 bg-white/5 p-3 rounded-2xl border border-white/10">
+                  <button onClick={() => setSelectedFriendId(null)} className="size-8 flex items-center justify-center bg-white/10 rounded-full text-white/60">
+                    <span className="material-symbols-outlined text-sm">arrow_back</span>
+                  </button>
+                  <img src={friends.find(f => f.friend_id === selectedFriendId)?.friend_profiles?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100'} className="size-8 rounded-full" />
+                  <p className="font-bold text-sm">{friends.find(f => f.friend_id === selectedFriendId)?.friend_profiles?.username}</p>
+                </div>
 
-        <div className="flex items-end gap-3 justify-end">
-          <div className="flex flex-1 flex-col gap-1 items-end">
-            <p className="text-primary text-[11px] font-bold mr-1">Você</p>
-            <div className="max-w-[85%] rounded-2xl rounded-br-none px-4 py-3 bg-primary shadow-lg shadow-primary/20">
-              <p className="text-base font-bold text-white">BINGOOO! Eu não acredito!</p>
-            </div>
+                {(directMessages[selectedFriendId] || []).length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-48 opacity-20">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.2em]">Diga um Oi!</p>
+                  </div>
+                ) : (
+                  (directMessages[selectedFriendId] || []).map((m: any, i) => {
+                    const isMe = m.sender_id === currentUserId;
+                    const senderAvatar = m.profiles?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100';
+                    const senderName = m.profiles?.username || 'Amigo';
+
+                    return (
+                      <div key={m.id || i} className={`flex items-end gap-3 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                        {!isMe && (
+                          <img src={senderAvatar} className="size-8 rounded-full border border-white/10" />
+                        )}
+                        <div className={`flex flex-col gap-1 ${isMe ? 'items-end' : 'items-start'}`}>
+                          {!isMe && <p className="text-white/40 text-[9px] font-bold uppercase tracking-wider ml-1">{senderName}</p>}
+                          <div className={`max-w-[240px] px-4 py-3 rounded-2xl shadow-sm ${isMe ? 'bg-primary text-white rounded-br-none' : 'bg-white/10 text-white/90 border border-white/10 rounded-bl-none'}`}>
+                            <p className="text-sm font-medium leading-relaxed">{m.content}</p>
+                          </div>
+                        </div>
+                        {isMe && (
+                          <img src={senderAvatar} className="size-8 rounded-full border border-primary/30" />
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
           </div>
-          <img src="https://picsum.photos/100/100?random=2" className="size-10 rounded-full border-2 border-primary" />
-        </div>
+        )}
       </main>
 
-      <footer className="bg-white dark:bg-background-dark border-t border-gray-100 dark:border-gray-800 p-4 pb-8">
+      <footer className="bg-background-dark/95 backdrop-blur-md border-t border-white/5 p-4 pb-8 sticky bottom-0">
         <div className="max-w-md mx-auto space-y-4">
           <div className="flex justify-between px-2">
-            {['🔥', '👏', '😂', '😭', '🥳'].map((emoji) => (
-              <button key={emoji} className="size-12 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-2xl active:scale-95 transition-all">{emoji}</button>
+            {['🔥', '👏', '😂', '🍀', '🙌'].map((emoji) => (
+              <button
+                key={emoji}
+                onClick={() => setMsg(prev => prev + emoji)}
+                className="size-11 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-xl active:scale-90 transition-all shadow-inner"
+              >
+                {emoji}
+              </button>
             ))}
           </div>
-          <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 rounded-full px-4 py-1">
-            <input 
-              value={msg} 
+          <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-full pl-6 pr-1.5 py-1.5 focus-within:bg-white/[0.08] focus-within:border-primary/30 transition-all">
+            <input
+              value={msg}
               onChange={(e) => setMsg(e.target.value)}
-              className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-3 text-white placeholder:text-gray-400" 
-              placeholder="Envie uma mensagem..." 
+              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+              className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-2 text-white placeholder:text-white/20 font-medium"
+              placeholder="Digite sua mensagem..."
             />
-            <button className="bg-primary text-white size-10 rounded-full flex items-center justify-center shadow-md">
+            <button
+              onClick={handleSend}
+              className="bg-primary text-white size-10 rounded-full flex items-center justify-center shadow-lg shadow-primary/40 active:scale-95 transition-all"
+            >
               <span className="material-symbols-outlined text-[20px]">send</span>
             </button>
           </div>

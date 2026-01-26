@@ -43,11 +43,16 @@ interface AudioState {
     resetTrack: () => void;
     setDucked: (ducked: boolean) => void;
     isDucked: boolean;
+    isNarrationMuted: boolean;
+    toggleNarration: () => void;
+    selectedVoice: string;
+    setVoice: (voice: string) => void;
+    playSfx: (type: 'drum' | 'drop' | 'win') => void;
 }
 
 export const useAudioStore = create<AudioState>()(
     persist(
-        (set) => ({
+        (set, get) => ({
             isMuted: false,
             isPlaying: false,
             volume: 0.5,
@@ -84,6 +89,25 @@ export const useAudioStore = create<AudioState>()(
             resetTrack: () => set({ currentTrackIndex: 0 }),
             isDucked: false,
             setDucked: (isDucked) => set({ isDucked }),
+            isNarrationMuted: false,
+            toggleNarration: () => set((state) => ({ isNarrationMuted: !state.isNarrationMuted })),
+            selectedVoice: 'vovo',
+            setVoice: (voice) => set({ selectedVoice: voice }),
+            playSfx: (type) => {
+                const s = get();
+                if (s.isMuted) return;
+
+                let file = '';
+                if (type === 'drum') file = '/audio/sfx/drum_roll.mp3';
+                else if (type === 'drop') file = '/audio/sfx/ball_drop.mp3';
+                else if (type === 'win') file = '/audio/sfx/bingo_win.mp3';
+
+                if (file) {
+                    const audio = new Audio(file);
+                    audio.volume = s.volume;
+                    audio.play().catch(() => { });
+                }
+            }
         }),
         {
             name: 'bingola-audio-storage',

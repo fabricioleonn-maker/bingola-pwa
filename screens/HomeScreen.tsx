@@ -2,8 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { AppScreen } from '../types';
 import { useRoomStore } from '../state/roomStore';
+import { useNotificationStore } from '../state/notificationStore';
 import { clearBingolaLocalState } from '../state/persist';
 import { useTutorialStore } from '../state/tutorialStore';
+import { useInvitationStore } from '../state/invitationStore';
+import QRScanner from '../components/QRScanner';
 
 interface HomeProps {
   onNavigate: (screen: AppScreen) => void;
@@ -13,6 +16,7 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
   const [userName, setUserName] = useState('Explorador');
   const [balance, setBalance] = useState(0);
   const [profileAvatar, setProfileAvatar] = useState<string | null>(null);
+  const [history, setHistory] = useState<any[]>([]);
   // State derived from Store (removed local state for these)
   const hasActiveRoom = !!useRoomStore((s) => s.roomId);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -23,6 +27,7 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
   const isHost = room?.host_id === currentUserId;
 
   const [showJoinModal, setShowJoinModal] = useState(false);
+  const [showQRScanner, setShowQRScanner] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [isJoining, setIsJoining] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -65,8 +70,21 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
           setUserName((profile as any).username || 'Usuário');
           setBalance((profile as any).bcoins || 0);
           setProfileAvatar((profile as any).avatar_url || null);
+          fetchHistory(user.id);
         }
       }
+    };
+
+    const fetchHistory = async (userId: string) => {
+      const { data } = await supabase
+        .from('participants')
+        .select('room_id, rooms!inner(name, status, created_at)')
+        .eq('user_id', userId)
+        .eq('rooms.status', 'finished')
+        .order('created_at', { foreignTable: 'rooms', ascending: false })
+        .limit(5);
+
+      if (data) setHistory(data.map(d => ({ name: (d as any).rooms.name, id: d.room_id })));
     };
 
     fetchProfile();
@@ -78,7 +96,16 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
     if (!hasSeenTutorial && !isActive) {
       setTimeout(() => startTutorial(), 2000); // Small delay for splash to end
     }
+
+    // Poll for invites
+    const { fetchIncoming } = useInvitationStore.getState();
+    fetchIncoming();
+    const inviteInterval = setInterval(fetchIncoming, 10000);
+
+    return () => clearInterval(inviteInterval);
   }, [roomId]);
+
+  const { incoming, respondToInvite } = useInvitationStore();
 
   // Derive HUD state from Store
   const isGameRunning = !!roomId && room?.status === 'playing';
@@ -87,52 +114,99 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
     : null;
 
   const handleForceExit = async () => {
-    if (window.confirm("Deseja forçar a saída da mesa atual?")) {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user && roomId) {
-          // If host, try to mark room as finished so it doesn't show up in watchdog for anyone
-          const { data: roomInfo } = await supabase.from('rooms').select('host_id').eq('id', roomId).single();
-          if (roomInfo?.host_id === user.id) {
-            await supabase.from('rooms').update({ status: 'finished' }).eq('id', roomId);
+    useNotificationStore.getState().confirm({
+      title: "Encerrar Mesa?",
+      message: "Deseja forçar a saída da mesa atual? Esta ação é irreversível.",
+      onConfirm: async () => {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user && roomId) {
+            // If host, try to mark room as finished so it doesn't show up in watchdog for anyone
+            const { data: roomInfo } = await supabase.from('rooms').select('host_id').eq('id', roomId).single();
+            if (roomInfo?.host_id === user.id) {
+              await supabase.from('rooms').update({ status: 'finished' }).eq('id', roomId);
+            }
+            await supabase.from('participants').delete().eq('room_id', roomId).eq('user_id', user.id);
           }
-          await supabase.from('participants').delete().eq('room_id', roomId).eq('user_id', user.id);
+        } catch (err) {
+          console.warn("Error force exiting:", err);
         }
-      } catch (err) {
-        console.warn("Error force exiting:", err);
+
+        // Clear game states but set a hard block on auto-resume for 1 minute
+        localStorage.removeItem('bingola_game_running');
+        localStorage.removeItem('bingola_active_room_id');
+        localStorage.setItem('bingola_force_no_resume', Date.now().toString());
+
+        useRoomStore.getState().setRoomId(null);
+        window.location.reload();
       }
+    });
+  };
 
-      // Clear game states but set a hard block on auto-resume for 1 minute
-      localStorage.removeItem('bingola_game_running');
-      localStorage.removeItem('bingola_active_room_id');
-      localStorage.setItem('bingola_force_no_resume', Date.now().toString());
+  const handleQRScan = (decodedText: string) => {
+    // Expected format: ...?join=1234&trusted=1
+    let code = '';
+    let isTrusted = false;
 
-      useRoomStore.getState().setRoomId(null);
-      window.location.reload();
+    if (decodedText.includes('join=')) {
+      const url = new URL(decodedText);
+      code = url.searchParams.get('join') || '';
+      isTrusted = url.searchParams.get('trusted') === '1';
+    } else {
+      const match = decodedText.match(/\d{4}/);
+      if (match) code = match[0];
+    }
+
+    if (code.length === 4) {
+      setJoinCode(code);
+      setShowQRScanner(false);
+      setTimeout(() => {
+        handleJoinByCode(code, isTrusted);
+      }, 500);
+    } else {
+      useNotificationStore.getState().show("Código inválido no QR", 'error');
     }
   };
 
-  const handleJoinByCode = async () => {
+  const handleJoinByCode = async (forcedCodeOrEvent?: any, qrTrusted?: boolean) => {
+    // If called by onClick, forcedCodeOrEvent is a React synthetic event
+    const codeToJoin = (typeof forcedCodeOrEvent === 'string' ? forcedCodeOrEvent : null) || joinCode;
+    const isActuallyTrusted = qrTrusted || false;
+
     setErrorMsg(null);
-    if (joinCode.length < 4) {
+    if (codeToJoin.length < 4) {
       setErrorMsg('O código deve ter pelo menos 4 dígitos.');
       return;
     }
     setIsJoining(true);
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuário não autenticado.");
+
+      // 1. Dual Device / Session Protection
+      const { data: activeMembership } = await supabase
+        .from('participants')
+        .select('room_id, rooms!inner(status, name)')
+        .eq('user_id', user.id)
+        .eq('status', 'accepted')
+        .neq('rooms.status', 'finished')
+        .maybeSingle();
+
+      if (activeMembership && (!roomId || activeMembership.room_id !== roomId)) {
+        throw new Error(`Você já está em outra mesa ativa (${(activeMembership.rooms as any).name}). Saia dela primeiro.`);
+      }
+
+      // 2. Room Discovery
       const { data: roomData, error: roomError } = await supabase
         .from('rooms')
         .select('id, status, name, player_limit')
-        .eq('code', joinCode)
-        .neq('status', 'finished')
+        .eq('code', codeToJoin)
+        .in('status', ['lobby', 'playing'])
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      if (roomError || !roomData) {
-        setErrorMsg('Sala não encontrada ou já encerrada.');
-        return;
-      }
+      if (roomError || !roomData) throw new Error('Mesa não encontrada ou encerrada.');
 
       // 1a. Full Room Check
       const { count: acceptedCount } = await supabase
@@ -144,11 +218,9 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
       const limit = roomData.player_limit || 20;
       // Host occupies 1 spot, so we check if (accepted + 1) >= limit
       if (acceptedCount !== null && (acceptedCount + 1) >= limit) {
-        setErrorMsg("Mesa já está cheia, entre em contato com o anfitrião");
-        return;
+        throw new Error('Mesa cheia.');
       }
 
-      const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Sessão expirada. Faça login novamente.');
 
       // 1b. Ban Check (Unified)
@@ -179,19 +251,23 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
       for (const k of keysToRemove) localStorage.removeItem(k);
 
       // 2. Join the new room
-      const { error: partError } = await supabase
-        .from('participants')
-        .upsert({
-          room_id: roomData.id,
-          user_id: user.id,
-          status: 'pending'
-        }, { onConflict: 'room_id,user_id' });
-
-      if (partError) throw partError;
+      if (isActuallyTrusted) {
+        await useRoomStore.getState().joinRoomWithStatus(roomData.id, user.id, 'accepted');
+        useNotificationStore.getState().show("Entrada autorizada pelo QR!", 'success');
+      } else {
+        await useRoomStore.getState().joinRoomWithStatus(roomData.id, user.id, 'pending');
+      }
 
       clearBingolaLocalState();
       useRoomStore.getState().setRoomId(roomData.id);
-      onNavigate('participant_lobby');
+      setShowJoinModal(false);
+
+      // REDIRECT LOGIC: If playing and trusted/accepted, go straight to game
+      if (roomData.status === 'playing' && isActuallyTrusted) {
+        onNavigate('game');
+      } else {
+        onNavigate('participant_lobby');
+      }
     } catch (err: any) {
       setErrorMsg(err.message || 'Erro ao entrar na sala.');
     } finally {
@@ -200,7 +276,43 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
   };
 
   return (
-    <div className="flex flex-col min-h-[100dvh] bg-background-dark text-white font-sans overflow-x-hidden pb-[env(safe-area-inset-bottom)]">
+    <div className="flex flex-col min-h-[100dvh] bg-background-dark text-white font-sans overflow-x-hidden pb-[env(safe-area-inset-bottom)] relative">
+      {/* Invitation Overlay */}
+      {incoming?.length > 0 && (
+        <div className="fixed top-24 left-4 right-4 z-[1001] animate-in slide-in-from-top duration-500">
+          <div className="bg-primary/95 backdrop-blur-xl p-5 rounded-[2rem] border border-white/20 shadow-[0_20px_50px_rgba(255,61,113,0.3)] flex items-center gap-4">
+            <div className="size-12 rounded-full bg-white/20 flex items-center justify-center border border-white/30">
+              <span className="material-symbols-outlined text-white animate-bounce">celebration</span>
+            </div>
+            <div className="flex-1">
+              <p className="text-[10px] font-black text-white/60 uppercase tracking-widest">Convite de Jogo!</p>
+              <h4 className="font-black italic text-white text-xs leading-tight">
+                <span className="text-white/40">@{incoming[0].host_name}</span> te convidou para <span className="text-white">{incoming[0].room_name}</span>
+              </h4>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => respondToInvite(incoming[0].id, 'rejected')}
+                className="size-10 bg-black/20 rounded-xl flex items-center justify-center text-white/40 border border-white/10 active:scale-90 transition-all"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+              <button
+                onClick={async () => {
+                  const inv = incoming[0];
+                  await respondToInvite(inv.id, 'accepted');
+                  // Fetch room code
+                  const { data } = await supabase.from('rooms').select('code').eq('id', inv.room_id).single();
+                  if (data) handleJoinByCode(data.code, true);
+                }}
+                className="h-10 px-4 bg-white text-primary font-black text-[10px] rounded-xl shadow-lg uppercase active:scale-95 transition-all"
+              >
+                ACEITAR
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <header className="flex items-center justify-between p-6 pt-10">
         <div className="flex flex-col">
           <h2 className="text-2xl font-bold">Olá, {userName}! 👋</h2>
@@ -281,7 +393,7 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
             id="create-room-btn"
             onClick={() => {
               if (hasActiveRoom) {
-                alert("Você já está em uma mesa ativa! Saia dela primeiro ou clique em 'Abrir Lobby'.");
+                useNotificationStore.getState().show("Você já está em uma mesa ativa! Saia dela primeiro ou clique em 'Abrir Lobby'.", 'info');
                 return;
               }
               onNavigate('host_dashboard');
@@ -300,7 +412,7 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
             id="join-personalize-section"
             onClick={() => {
               if (hasActiveRoom) {
-                alert("Você já está em uma mesa ativa! Saia dela primeiro ou clique em 'Abrir Lobby'.");
+                useNotificationStore.getState().show("Você já está em uma mesa ativa! Saia dela primeiro ou clique em 'Abrir Lobby'.", 'info');
                 return;
               }
               setErrorMsg(null);
@@ -323,18 +435,26 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
               <h3 className="text-2xl font-black text-center mb-2 italic">Entrar na Mesa</h3>
               <p className="text-white/40 text-[10px] text-center font-black uppercase tracking-widest mb-8">Digite o PIN de 4 dígitos</p>
 
-              <input
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={4}
-                value={joinCode}
-                onChange={(e) => setJoinCode(e.target.value.replace(/\D/g, ''))}
-                placeholder="0000"
-                id="join-code-input"
-                className="w-full h-20 bg-white/5 border border-white/10 rounded-2xl text-center text-4xl font-black tracking-[0.5em] text-primary focus:border-primary/50 focus:ring-0 transition-all mb-8 placeholder:opacity-10"
-                autoFocus
-              />
+              <div className="relative group mb-8">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={4}
+                  value={joinCode}
+                  onChange={(e) => setJoinCode(e.target.value.replace(/\D/g, ''))}
+                  placeholder="0000"
+                  id="join-code-input"
+                  className="w-full h-20 bg-white/5 border border-white/10 rounded-2xl text-center text-4xl font-black tracking-[0.5em] text-primary focus:border-primary/50 focus:ring-0 transition-all placeholder:opacity-10"
+                  autoFocus
+                />
+                <button
+                  onClick={() => setShowQRScanner(true)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 size-12 bg-primary/10 rounded-xl flex items-center justify-center text-primary border border-primary/20 active:scale-95 transition-all"
+                >
+                  <span className="material-symbols-outlined">qr_code_scanner</span>
+                </button>
+              </div>
 
               {errorMsg && (
                 <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 mb-6 animate-pulse">
@@ -368,17 +488,24 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
           </div>
         )}
 
+        {showQRScanner && (
+          <QRScanner
+            onScan={handleQRScan}
+            onClose={() => setShowQRScanner(false)}
+          />
+        )}
+
         <section>
-          <h3 className="text-lg font-bold mb-4">Mesas Próximas</h3>
+          <h3 className="text-sm font-black text-white/40 uppercase tracking-widest mb-4">Histórico de Mesas</h3>
           <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2">
-            {[
-              { name: 'Bingo da Vovó', img: 'https://images.unsplash.com/photo-1518133839073-42716b066fe8?q=80&w=200&auto=format&fit=crop' },
-              { name: 'Mesa Premium', img: 'https://images.unsplash.com/photo-1595113316349-9fa4ee24f884?q=80&w=200&auto=format&fit=crop' },
-              { name: 'Happy Hour', img: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?q=80&w=200&auto=format&fit=crop' }
-            ].map((item, i) => (
-              <div key={i} className="flex-none w-36 space-y-2 group cursor-pointer">
-                <div className="aspect-square rounded-2xl bg-surface-dark border border-white/5 relative overflow-hidden">
-                  <img src={item.img} className="w-full h-full object-cover opacity-60 group-hover:scale-110 transition-transform" />
+            {history.length === 0 ? (
+              <div className="w-full h-24 flex items-center justify-center border border-white/5 rounded-2xl bg-white/5">
+                <p className="text-[10px] font-black text-white/20 uppercase tracking-widest">Nenhuma partida finalizada</p>
+              </div>
+            ) : history.map((item, i) => (
+              <div key={i} className="flex-none w-36 space-y-2 group">
+                <div className="aspect-square rounded-2xl bg-surface-dark border border-white/5 relative overflow-hidden flex items-center justify-center">
+                  <span className="material-symbols-outlined text-white/10 text-4xl">history</span>
                 </div>
                 <p className="font-bold text-sm truncate">{item.name}</p>
               </div>
@@ -404,6 +531,10 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
         <button onClick={() => onNavigate('ranking')} className="flex flex-col items-center gap-1 text-white/40">
           <span className="material-symbols-outlined">leaderboard</span>
           <span className="text-[10px] font-bold">Ranking</span>
+        </button>
+        <button onClick={() => onNavigate('friends')} className="flex flex-col items-center gap-1 text-white/40">
+          <span className="material-symbols-outlined">group</span>
+          <span className="text-[10px] font-bold">Social</span>
         </button>
         <button onClick={() => onNavigate('store')} className="flex flex-col items-center gap-1 text-white/40">
           <span className="material-symbols-outlined">storefront</span>
