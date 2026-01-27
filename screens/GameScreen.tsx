@@ -10,6 +10,7 @@ import { useTutorialStore } from '../state/tutorialStore';
 import { setNoResume, clearBingolaLocalState } from '../state/persist';
 import { useChatStore } from '../state/chatStore';
 import { useFriendshipStore } from '../state/friendshipStore';
+import { FloatingChat } from '../components/FloatingChat';
 
 interface Props {
   roomInfo: any;
@@ -377,24 +378,14 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
     const lastDrawTimeStr = roomInfo?.updated_at || localStorage.getItem('bingola_last_draw_time');
     const lastDraw = lastDrawTimeStr ? new Date(lastDrawTimeStr).getTime() : Date.now();
     const now = Date.now();
-    const elapsedSinceDraw = now - lastDraw;
-    const isDrumRoll = elapsedSinceDraw < 3000;
     const currentNum = drawnNumbers[drawnNumbers.length - 1];
 
-    if (isDrumRoll && !isDrumPlayingRef.current) {
-      isDrumPlayingRef.current = true;
-      playSfx('drum');
-    }
-
-    if (!isDrumRoll && lastAudioNumRef.current !== currentNum) {
-      isDrumPlayingRef.current = false;
+    if (lastAudioNumRef.current !== currentNum) {
       lastAudioNumRef.current = currentNum;
       playSfx('drop');
-      setTimeout(() => {
-        speakBingoNumber(currentNum, isNarrationMuted, selectedVoice);
-      }, 500);
+      speakBingoNumber(currentNum, isNarrationMuted, selectedVoice);
     }
-  }, [drawnNumbers.length, roomInfo?.updated_at, isPaused, playSfx, isNarrationMuted]);
+  }, [drawnNumbers.length, isPaused, playSfx, isNarrationMuted, selectedVoice]);
 
   // Sync timer with Server Timestamp
   useEffect(() => {
@@ -471,11 +462,33 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
     } else {
       // Check secondary patterns strictly
       if (patterns.cinquina) {
+        // Horizontal
         for (let r = 0; r < 5; r++) if (grid[r].every(isMarked)) winType = "Cinquina";
+
+        // Vertical
+        if (!winType) {
+          for (let c = 0; c < 5; c++) {
+            let colWin = true;
+            for (let r = 0; r < 5; r++) if (!isMarked(grid[r][c])) colWin = false;
+            if (colWin) winType = "Cinquina";
+          }
+        }
+
+        // Diagonals
+        if (!winType) {
+          const d1 = [grid[0][0], grid[1][1], grid[2][2], grid[3][3], grid[4][4]];
+          const d2 = [grid[0][4], grid[1][3], grid[2][2], grid[3][1], grid[4][0]];
+          if (d1.every(isMarked) || d2.every(isMarked)) winType = "Cinquina";
+        }
       }
+
+      // Check Cantos
       if (!winType && patterns.cantos) {
-        if ([grid[0][0], grid[0][4], grid[4][0], grid[4][4]].every(isMarked)) winType = "Cantos";
+        const corners = [grid[0][0], grid[0][4], grid[4][0], grid[4][4]];
+        if (corners.every(isMarked)) winType = "Cantos";
       }
+
+      // Check Cartela em X
       if (!winType && patterns.x) {
         const d1 = [grid[0][0], grid[1][1], grid[2][2], grid[3][3], grid[4][4]];
         const d2 = [grid[0][4], grid[1][3], grid[2][2], grid[3][1], grid[4][0]];
@@ -514,10 +527,26 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
     if (winType === 'Cartela Cheia') {
       winningNumbers = grid.flat().filter(n => n !== 0 && marked.includes(n));
     } else if (winType === 'Cinquina') {
+      // Horizontal
       for (let r = 0; r < 5; r++) {
         if (grid[r].every(isMarked)) winningNumbers = grid[r].filter(n => n !== 0);
       }
-    } else if (winType === 'Cantos') {
+      // Vertical (if not already set)
+      if (winningNumbers.length === 0) {
+        for (let c = 0; c < 5; c++) {
+          let column = [grid[0][c], grid[1][c], grid[2][c], grid[3][c], grid[4][c]];
+          if (column.every(isMarked)) winningNumbers = column.filter(n => n !== 0);
+        }
+      }
+      // Diagonals (if not already set)
+      if (winningNumbers.length === 0) {
+        const d1 = [grid[0][0], grid[1][1], grid[2][2], grid[3][3], grid[4][4]];
+        const d2 = [grid[0][4], grid[1][3], grid[2][2], grid[3][1], grid[4][0]];
+        if (d1.every(isMarked)) winningNumbers = d1.filter(n => n !== 0);
+        else if (d2.every(isMarked)) winningNumbers = d2.filter(n => n !== 0);
+      }
+    }
+    else if (winType === 'Cantos') {
       const corners = [grid[0][0], grid[0][4], grid[4][0], grid[4][4]];
       winningNumbers = corners.filter(n => n !== 0);
     } else if (winType === 'Cartela em X') {
@@ -547,6 +576,18 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
       localStorage.setItem(claimedKey, JSON.stringify(newList));
       return newList;
     });
+
+    // REWARD: Automatically award BPoints for ranking
+    const bpointsReward = isFullCard ? 35 : 10;
+    if (currentUserId) {
+      supabase.from('profiles').select('bpoints').eq('id', currentUserId).single()
+        .then(({ data }) => {
+          if (data) {
+            supabase.from('profiles').update({ bpoints: (data.bpoints || 0) + bpointsReward }).eq('id', currentUserId)
+              .then(() => console.log(`[Ranking] Reward +${bpointsReward} BPoints applied.`));
+          }
+        });
+    }
 
     if (winnerChannelRef.current) {
       winnerChannelRef.current.send({

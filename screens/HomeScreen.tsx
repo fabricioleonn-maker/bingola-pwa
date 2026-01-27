@@ -193,9 +193,12 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
         .maybeSingle();
 
       if (activeMembership && (!roomId || activeMembership.room_id !== roomId)) {
-        throw new Error(`Você já está em outra mesa ativa (${(activeMembership.rooms as any).name}). Saia dela primeiro.`);
+        // IMPROVEMENT: Instead of blocking, automatically exit the old room to let the user join the new one
+        console.log(`[Join] Auto-cleaning old room: ${activeMembership.room_id}`);
+        await useRoomStore.getState().hardExit(activeMembership.room_id, user.id);
       }
 
+      // ... rest of the logic ...
       // 2. Room Discovery
       const { data: roomData, error: roomError } = await supabase
         .from('rooms')
@@ -208,7 +211,7 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
 
       if (roomError || !roomData) throw new Error('Mesa não encontrada ou encerrada.');
 
-      // 1a. Full Room Check
+      // ... player limit and ban checks ...
       const { count: acceptedCount } = await supabase
         .from('participants')
         .select('id', { count: 'exact', head: true })
@@ -216,14 +219,10 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
         .eq('status', 'accepted');
 
       const limit = roomData.player_limit || 20;
-      // Host occupies 1 spot, so we check if (accepted + 1) >= limit
       if (acceptedCount !== null && (acceptedCount + 1) >= limit) {
         throw new Error('Mesa cheia.');
       }
 
-      if (!user) throw new Error('Sessão expirada. Faça login novamente.');
-
-      // 1b. Ban Check (Unified)
       const { data: banData } = await supabase
         .from('room_bans')
         .select('rejection_count')
@@ -232,42 +231,38 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
         .maybeSingle();
 
       if (banData && banData.rejection_count >= 2) {
-        setErrorMsg("Você foi banido permanentemente desta mesa.");
-        return;
+        throw new Error("Você foi banido permanentemente desta mesa.");
       }
 
-      // 1c. Simple Rejection check REMOVED to allow retry (2-strike rule)
-      // The user can try again until they reach 2 rejections (handled by banData check above)
-
-      // 1d. Logic to clear previous states
-      useRoomStore.getState().setRoomId(null);
-      const keysToRemove = [
-        'bingola_game_running',
-        'bingola_paused',
-        'bingola_last_draw_time',
-        'bingola_drawn_numbers',
-        'bingola_last_winner'
-      ];
-      for (const k of keysToRemove) localStorage.removeItem(k);
+      // 1d. Logic to clear previous states - ONLY if needed
+      // useRoomStore.getState().setRoomId(null); // REDUNDANT: bootstrap handles this
+      // clearBingolaLocalState(); // REDUNDANT: handled by room logic
 
       // 2. Join the new room
       if (isActuallyTrusted) {
         await useRoomStore.getState().joinRoomWithStatus(roomData.id, user.id, 'accepted');
-        useNotificationStore.getState().show("Entrada autorizada pelo QR!", 'success');
+        useNotificationStore.getState().show("Entrada autorizada!", 'success');
       } else {
         await useRoomStore.getState().joinRoomWithStatus(roomData.id, user.id, 'pending');
       }
 
-      clearBingolaLocalState();
-      useRoomStore.getState().setRoomId(roomData.id);
-      setShowJoinModal(false);
+      // HYDRATION: Vital to prevent "black screen" (race condition)
+      console.log(`[Join] Hydrating store for room: ${roomData.id}`);
+      await useRoomStore.getState().bootstrap(roomData.id);
+      await useRoomStore.getState().refreshParticipants(roomData.id);
 
-      // REDIRECT LOGIC: If playing and trusted/accepted, go straight to game
-      if (roomData.status === 'playing' && isActuallyTrusted) {
-        onNavigate('game');
-      } else {
-        onNavigate('participant_lobby');
-      }
+      useRoomStore.getState().setRoomId(roomData.id);
+
+      // ENSURE navigation happens AFTER state is fully updated
+      setTimeout(() => {
+        setShowJoinModal(false);
+        // REDIRECT LOGIC
+        if (roomData.status === 'playing' && isActuallyTrusted) {
+          onNavigate('game');
+        } else {
+          onNavigate('participant_lobby');
+        }
+      }, 100);
     } catch (err: any) {
       setErrorMsg(err.message || 'Erro ao entrar na sala.');
     } finally {
@@ -276,7 +271,7 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
   };
 
   return (
-    <div className="flex flex-col min-h-[100dvh] bg-background-dark text-white font-sans overflow-x-hidden pb-[env(safe-area-inset-bottom)] relative">
+    <div className="flex flex-col h-full bg-background-dark text-white font-sans overflow-hidden relative">
       {/* Invitation Overlay */}
       {incoming?.length > 0 && (
         <div className="fixed top-24 left-4 right-4 z-[1001] animate-in slide-in-from-top duration-500">
@@ -313,7 +308,7 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
           </div>
         </div>
       )}
-      <header className="flex items-center justify-between p-6 pt-10">
+      <header className="flex items-center justify-between p-6 pt-6">
         <div className="flex flex-col">
           <h2 className="text-2xl font-bold">Olá, {userName}! 👋</h2>
           <div className="bg-primary/20 px-2 py-0.5 rounded-md border border-primary/30 w-fit mt-1 flex items-center gap-1">
@@ -342,7 +337,7 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
         </div>
       </header>
 
-      <main className="flex-1 px-4 space-y-6">
+      <main className="flex-1 px-4 space-y-6 overflow-y-auto pb-32 no-scrollbar">
         {isGameRunning && (
           <div
             onClick={() => onNavigate('game')}
@@ -503,11 +498,14 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
                 <p className="text-[10px] font-black text-white/20 uppercase tracking-widest">Nenhuma partida finalizada</p>
               </div>
             ) : history.map((item, i) => (
-              <div key={i} className="flex-none w-36 space-y-2 group">
-                <div className="aspect-square rounded-2xl bg-surface-dark border border-white/5 relative overflow-hidden flex items-center justify-center">
-                  <span className="material-symbols-outlined text-white/10 text-4xl">history</span>
+              <div key={i} className="flex-none p-4 w-40 rounded-3xl bg-white/5 border border-white/10 flex flex-col items-center gap-3 active:scale-95 transition-all">
+                <div className="size-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
+                  <span className="material-symbols-outlined">history</span>
                 </div>
-                <p className="font-bold text-sm truncate">{item.name}</p>
+                <div className="text-center w-full">
+                  <p className="font-black text-xs truncate w-full">{item.name}</p>
+                  <p className="text-[9px] font-bold text-white/20 uppercase mt-1">Finalizada</p>
+                </div>
               </div>
             ))}
           </div>
@@ -523,7 +521,7 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
         )}
       </main>
 
-      <nav className="fixed bottom-0 left-0 right-0 bg-background-dark/90 backdrop-blur-xl border-t border-white/5 flex items-center justify-around py-4 px-6 z-50">
+      <nav className="fixed bottom-0 left-0 right-0 bg-background-dark/95 backdrop-blur-xl border-t border-white/5 flex items-center justify-around py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] px-6 z-50">
         <button onClick={() => onNavigate('home')} className="flex flex-col items-center gap-1 text-primary">
           <span className="material-symbols-outlined fill-1">home</span>
           <span className="text-[10px] font-bold">Início</span>

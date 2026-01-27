@@ -38,7 +38,11 @@ const GlobalMusicHeader: React.FC<Props> = ({ currentScreen }) => {
 
     return (
         <div
-            className={`fixed top-0 left-0 right-0 z-[200] flex flex-col items-center transition-all duration-500 ease-in-out ${isExpanded ? 'bg-background-dark/95 backdrop-blur-xl border-b border-white/10 pb-6' : 'h-4 hover:h-10 group bg-white/[0.02] hover:bg-white/[0.08]'}`}>
+            style={{
+                height: isExpanded ? 'auto' : undefined,
+                paddingTop: 'env(safe-area-inset-top)'
+            }}
+            className={`fixed top-0 left-0 right-0 z-[200] flex flex-col items-center transition-all duration-500 ease-in-out ${isExpanded ? 'bg-background-dark/95 backdrop-blur-xl border-b border-white/10 pb-6' : 'h-8 hover:h-12 group bg-white/[0.02] hover:bg-white/[0.08]'}`}>
             {/* The "Invisible" Trigger Bar */}
             <div
                 onClick={() => setIsExpanded(!isExpanded)}

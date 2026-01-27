@@ -81,8 +81,17 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
     };
   }, [roomId, onNavigate, myStatus]);
 
-  // Fallback navigation via DB poll
+  // Fallback navigation via DB poll + Closure Alert
   useEffect(() => {
+    if (!roomId) return;
+
+    if (room?.status === 'finished') {
+      useNotificationStore.getState().show("Esta mesa foi encerrada pelo anfitrião.", 'info');
+      useRoomStore.getState().setRoomId(null);
+      onNavigate('home');
+      return;
+    }
+
     // FIX: Only auto-navigate if ACCEPTED
     if (myStatus !== 'accepted') return;
 
@@ -216,7 +225,7 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto pb-6">
+      <main className="flex-1 overflow-y-auto pb-40">
         <section className="flex flex-col items-center pt-8 px-6 mb-8">
           <div className="bg-white/10 border border-white/10 p-8 rounded-[2.5rem] w-full flex flex-col items-center shadow-2xl relative overflow-hidden backdrop-blur-xl">
             <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 blur-3xl -mr-16 -mt-16 animate-pulse"></div>
@@ -304,7 +313,7 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
         </div>
       </main>
 
-      <footer className="fixed bottom-0 left-0 right-0 p-4 bg-background-dark/80 backdrop-blur-md border-t border-white/5 z-30 flex items-center justify-center">
+      <footer className="fixed bottom-0 left-0 right-0 p-4 bg-background-dark/80 backdrop-blur-md border-t border-white/5 z-30 flex items-center justify-center pb-[calc(env(safe-area-inset-bottom)+1rem)]">
         <div className="flex items-center gap-2">
           <span className="text-[10px] font-black text-white/20 uppercase tracking-[0.2em]">CÓDIGO DA MESA:</span>
           <span className="text-primary font-black text-lg tracking-widest">{room.code}</span>
@@ -388,7 +397,7 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
         </div>
       )}
 
-      <FloatingChat bottomOffset="0px" />
+      <FloatingChat bottomOffset="80px" />
 
       {/* Voice Selection Modal */}
       {showVoiceModal && (

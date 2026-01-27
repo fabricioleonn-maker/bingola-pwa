@@ -77,12 +77,20 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
         return () => {
             isMounted.current = false;
             clearTimeout(timer);
-            if (scannerRef.current) {
-                if (scannerRef.current.isScanning) {
-                    scannerRef.current.stop().catch(console.error);
+
+            const cleanup = async () => {
+                if (scannerRef.current) {
+                    try {
+                        if (scannerRef.current.isScanning) {
+                            await scannerRef.current.stop();
+                        }
+                        scannerRef.current.clear();
+                    } catch (e) {
+                        console.warn("[QRScanner] Cleanup error:", e);
+                    }
                 }
-                scannerRef.current.clear();
-            }
+            };
+            cleanup();
         };
     }, []);
 

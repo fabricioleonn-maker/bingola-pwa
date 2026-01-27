@@ -22,7 +22,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         const fetchExisting = async () => {
             const { data } = await supabase
                 .from('room_messages')
-                .select('*, profiles(username, avatar_url)')
+                .select('*, profiles:user_id(username, avatar_url)')
                 .eq('room_id', roomId)
                 .order('created_at', { ascending: true })
                 .limit(50);
@@ -31,7 +31,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         fetchExisting();
 
         const channel = supabase
-            .channel(`chat_room_${roomId}`)
+            .channel(`room_chat:${roomId}`)
             .on('postgres_changes', {
                 event: 'INSERT',
                 schema: 'public',

@@ -13,8 +13,9 @@ export const NotificationToast: React.FC = () => {
                 {notifications.map(n => (
                     <div
                         key={n.id}
+                        onClick={() => useNotificationStore.getState().dismiss(n.id)}
                         className={`
-                            pointer-events-auto
+                            pointer-events-auto cursor-pointer active:scale-95 transition-all
                             p-4 rounded-2xl shadow-2xl border backdrop-blur-md animate-in slide-in-from-top duration-300
                             flex items-center gap-3
                             ${n.type === 'success' ? 'bg-green-500/90 border-green-400/50 text-white' : ''}

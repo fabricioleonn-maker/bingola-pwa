@@ -46,21 +46,38 @@ const App: React.FC = () => {
   // Used to ensure only the latest watchdog run takes effect
   const runTokenRef = useRef(0);
 
+  const [lastInteraction, setLastInteraction] = useState(Date.now());
+  const [isSessionClaimed, setIsSessionClaimed] = useState(false);
+
+  // Track global activity for 3-minute inactivity logout
+  useEffect(() => {
+    const handleActivity = () => setLastInteraction(Date.now());
+    window.addEventListener('mousedown', handleActivity);
+    window.addEventListener('keydown', handleActivity);
+    window.addEventListener('touchstart', handleActivity);
+    window.addEventListener('scroll', handleActivity);
+    return () => {
+      window.removeEventListener('mousedown', handleActivity);
+      window.removeEventListener('keydown', handleActivity);
+      window.removeEventListener('touchstart', handleActivity);
+      window.removeEventListener('scroll', handleActivity);
+    };
+  }, []);
+
   // Single source of truth for realtime session
   useRoomSession(roomId);
 
   const [mySessionId] = useState(Math.random().toString(36).substring(7));
-  const drawIntervalRef = useRef<any>(null);
-
   const { show: showNotify } = useNotificationStore();
 
   useEffect(() => {
     // 1. Check initial session
     const initSession = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-          setSession(session);
+        const { data: { session: initialSession } } = await supabase.auth.getSession();
+        if (initialSession) {
+          console.log("[App] Initial session found:", initialSession.user.id);
+          setSession(initialSession);
         } else {
           setCurrentScreen('login');
         }
@@ -75,9 +92,14 @@ const App: React.FC = () => {
     initSession();
 
     // 2. Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      if (!session) {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
+      console.log("[Auth] Event:", event);
+      setSession(newSession);
+
+      // ONLY clear state on explicit SIGNED_OUT. 
+      // Avoids clearing on transient 'null' sessions during refresh/token-exchange.
+      if (event === 'SIGNED_OUT') {
+        console.log("[Auth] Signed out. Cleaning up local state.");
         clearBingolaLocalState();
         setRoomId(null);
         setCurrentScreen('login');
@@ -89,7 +111,9 @@ const App: React.FC = () => {
 
     supabase.auth.getUser().then(({ data }) => {
       if (data.user) {
-        setRoomId(localStorage.getItem('bingola_room_id'));
+        const pId = readPersistedRoomId();
+        console.log("[App] User active. Restoring persisted roomId:", pId);
+        if (pId) setRoomId(pId);
 
         dmChannel = supabase.channel('global_dms')
           .on('postgres_changes', {
@@ -140,24 +164,24 @@ const App: React.FC = () => {
       if (friendChannel) supabase.removeChannel(friendChannel);
       if (hostChannel) supabase.removeChannel(hostChannel);
     };
-  }, [showNotify, setRoomId]);
+  }, [showNotify, setRoomId, session?.user?.id]);
 
   // 1. Session claim & Tutorial Sync
   useEffect(() => {
     if (session?.user?.id) {
-      supabase.from('profiles').update({ active_session_id: mySessionId }).eq('id', session.user.id);
+      setIsSessionClaimed(false); // Reset on user change
+      supabase.from('profiles').update({ active_session_id: mySessionId }).eq('id', session.user.id)
+        .then(() => {
+          console.log("[App] Session claimed in DB:", mySessionId);
+          setIsSessionClaimed(true);
+        });
 
-      // Fetch tutorial status (ONLY ONCE per session)
       supabase.from('profiles').select('has_seen_tutorial').eq('id', session.user.id).single()
         .then(({ data }) => {
           if (data) {
             const hasSeen = !!data.has_seen_tutorial;
             useTutorialStore.setState({ hasSeenTutorial: hasSeen });
 
-            // Auto-start tutorial ONLY if:
-            // - Has NOT seen it
-            // - Tutorial is NOT already active
-            // - We are currently on the 'home' screen
             const tutorialActive = useTutorialStore.getState().isActive;
             if (!hasSeen && !tutorialActive && currentScreen === 'home') {
               console.log("[Tutorial] First time user detected. Auto-starting sequence...");
@@ -166,7 +190,7 @@ const App: React.FC = () => {
           }
         });
     }
-  }, [session?.user?.id, mySessionId]); // Removed currentScreen dependency to fix infinite loop <!-- id: 19 -->
+  }, [session?.user?.id, mySessionId]);
 
   // 1b. Deep Link Join Handler
   useEffect(() => {
@@ -175,12 +199,8 @@ const App: React.FC = () => {
     const isTrusted = urlParams.get('trusted') === '1';
 
     if (joinCode && session?.user && currentScreen === 'home') {
-      console.log("[App] Deep link detected! Code:", joinCode, "Trusted:", isTrusted);
-
       const handleDeepJoin = async () => {
-        // Clear param from URL without refreshing
         window.history.replaceState({}, document.title, window.location.origin);
-
         try {
           const { data: roomData, error: roomError } = await supabase
             .from('rooms')
@@ -191,7 +211,6 @@ const App: React.FC = () => {
 
           if (roomError || !roomData) throw new Error('Mesa não encontrada.');
 
-          // Full check
           const { count } = await supabase
             .from('participants')
             .select('id', { count: 'exact', head: true })
@@ -202,7 +221,6 @@ const App: React.FC = () => {
             throw new Error('Mesa cheia.');
           }
 
-          // Ban check
           const { data: ban } = await supabase
             .from('room_bans')
             .select('rejection_count')
@@ -212,7 +230,6 @@ const App: React.FC = () => {
 
           if (ban && ban.rejection_count >= 2) throw new Error('Banido permanentemente.');
 
-          // Use Store's join helper
           await useRoomStore.getState().joinRoomWithStatus(
             roomData.id,
             session.user.id,
@@ -227,10 +244,9 @@ const App: React.FC = () => {
           useNotificationStore.getState().show(e.message || "Erro no link", 'error');
         }
       };
-
       handleDeepJoin();
     }
-  }, [session?.user, currentScreen, setCurrentScreen, setRoomId]); // Removed joinCode and fixed dependencies <!-- id: 11 -->
+  }, [session?.user, currentScreen, setCurrentScreen, setRoomId]);
 
   // 2. Watchdog: periodic sync
   useEffect(() => {
@@ -241,32 +257,54 @@ const App: React.FC = () => {
     const myToken = runTokenRef.current;
 
     const run = async () => {
-      // 0. Tutorial Bypass: Don't interfere if tutorial is active or mock room is set
       const tutorialActive = useTutorialStore.getState().isActive;
       if (tutorialActive || roomId === 'tutorial-mock') return;
 
-      // Small delay to allow consecutive state updates to settle
       await new Promise(r => setTimeout(r, 500));
       if (cancelled || myToken !== runTokenRef.current) return;
 
+      // 1. Inactivity Check (3 minutes)
+      const inactiveMs = Date.now() - lastInteraction;
+      if (inactiveMs > 180000) {
+        console.log("[Watchdog] Inactivity timeoutReached. Logging out.");
+        showNotify("Sessão encerrada por inatividade.", 'info');
+        if (roomId && session?.user?.id) {
+          await useRoomStore.getState().hardExit(roomId, session.user.id);
+        }
+        await supabase.auth.signOut();
+        return;
+      }
+
+      // 2. Session Conflict Check
+      if (isSessionClaimed) {
+        const { data: profile } = await supabase.from('profiles').select('active_session_id').eq('id', session.user.id).single();
+        if (profile && profile.active_session_id && profile.active_session_id !== mySessionId) {
+          console.log("[Watchdog] Session conflict detected. Logging out.");
+          showNotify("Sua conta foi conectada em outro local.", 'error');
+          if (roomId && session.user.id) await useRoomStore.getState().hardExit(roomId, session.user.id);
+          await supabase.auth.signOut();
+          return;
+        }
+      }
+
       const critical: AppScreen[] = ['lobby', 'game', 'participant_lobby', 'winners'];
 
-      // If we are in a critical screen, verify the room is still active
+      // If already in a room, verify it's still alive
       if (roomId && critical.includes(currentScreen)) {
-        const { data: currentRoom } = await supabase
-          .from('rooms')
-          .select('id, status')
-          .eq('id', roomId)
-          .maybeSingle();
-
+        const { data: currentRoom } = await supabase.from('rooms').select('id, status').eq('id', roomId).maybeSingle();
         if (!currentRoom || currentRoom.status === 'finished') {
-          console.log(`[Watchdog] Room ${roomId} invalid or finished. Cleanup triggered.`);
+          console.log(`[Watchdog] Room ${roomId} invalid/finished. Verifying with delay...`);
+          await new Promise(r => setTimeout(r, 3000));
+          const { data: recheck } = await supabase.from('rooms').select('id, status').eq('id', roomId).maybeSingle();
+          if (recheck && recheck.status !== 'finished') return;
+
+          console.log("[Watchdog] Room definitely gone. Cleaning up.");
           clearBingolaLocalState();
           setRoomId(null);
           setCurrentScreen('home');
           return;
         }
-        return; // Current room is still valid
+        return;
       }
 
       if (!canAutoResume(60000)) {
@@ -280,92 +318,71 @@ const App: React.FC = () => {
         return;
       }
 
+      // RESUME LOGIC (when currentScreen is splash/home but persistedId exists)
+      console.log("[Watchdog] Attempting restoration for room:", persistedId);
+
       // Host check
       const { data: hosted } = await supabase
         .from('rooms')
         .select('id, status')
         .eq('host_id', session.user.id)
+        .eq('id', persistedId)
         .neq('status', 'finished')
-        .order('created_at', { ascending: false })
-        .limit(1)
         .maybeSingle();
 
       if (hosted?.id) {
         if (cancelled) return;
-        // Reinforce guard just in case state changed during async calls
-        if (roomId && critical.includes(currentScreen)) return;
-
+        console.log("[Watchdog] Host role confirmed for room:", hosted.id);
         setRoomId(hosted.id);
         if (hosted.status === 'playing') {
-          const allowedInGame = ['game', 'customization', 'audio_settings', 'home', 'store', 'profile', 'ranking', 'messages', 'chat'];
-          if (!allowedInGame.includes(currentScreen)) setCurrentScreen('game');
+          const allowed = ['game', 'customization', 'audio_settings', 'home', 'store', 'profile', 'ranking', 'messages', 'chat'];
+          if (!allowed.includes(currentScreen)) setCurrentScreen('game');
         } else {
-          // Allow 'home' and main tabs so host can manage the app without being force-ejected from lobby context
-          const lobbyScreens: AppScreen[] = [
-            'lobby', 'game', 'host_dashboard', 'room_settings', 'audio_settings', 'rules_settings',
-            'customization', 'home', 'ranking', 'store', 'profile', 'messages', 'chat', 'friends'
-          ];
+          const lobbyScreens: AppScreen[] = ['lobby', 'game', 'host_dashboard', 'room_settings', 'audio_settings', 'rules_settings', 'customization', 'home', 'ranking', 'store', 'profile', 'messages', 'chat', 'friends'];
           if (!lobbyScreens.includes(currentScreen)) setCurrentScreen('lobby');
         }
         return;
       }
 
-      console.log("App Watchdog: Check", { screen: currentScreen });
       // Participant check
       const { data: part } = await supabase
         .from('participants')
         .select('room_id, status, rooms!inner(status)')
         .eq('user_id', session.user.id)
+        .eq('room_id', persistedId)
         .in('status', ['pending', 'accepted', 'rejected'])
         .neq('rooms.status', 'finished')
-        .order('created_at', { ascending: false })
-        .limit(1)
         .maybeSingle();
-
-      console.log("App Watchdog: Part result:", part);
 
       if (part?.room_id) {
         if (cancelled) return;
-        // Reinforce guard
-        if (roomId && critical.includes(currentScreen)) return;
-
+        console.log("[Watchdog] Participant role confirmed for room:", part.room_id);
         setRoomId(part.room_id);
         const rSt = (part as any).rooms?.status;
 
-        // NEW: Handle Rejection Globally
         if (part.status === 'rejected') {
-          console.log("App Watchdog: User is REJECTED. Forcing Lobby.");
-          // Ensure we are in the room context (setRoomId) but on the correct screen
-          if (roomId !== part.room_id) setRoomId(part.room_id);
           if (currentScreen !== 'participant_lobby') setCurrentScreen('participant_lobby');
           return;
         }
 
         if (rSt === 'playing') {
-          // STRICT SECURITY CHECK: Only accepted players can be in game
           if (part.status === 'accepted') {
-            // Allow 'customization' and 'audio_settings' so we don't force loop back to game
-            // Allow 'customization', 'audio_settings', and main tabs so users can leave temporarily
-            const allowedInGame = ['game', 'customization', 'audio_settings', 'home', 'store', 'profile', 'ranking', 'messages', 'chat', 'friends'];
-            if (!allowedInGame.includes(currentScreen)) setCurrentScreen('game');
+            const allowed = ['game', 'customization', 'audio_settings', 'home', 'store', 'profile', 'ranking', 'messages', 'chat', 'friends'];
+            if (!allowed.includes(currentScreen)) setCurrentScreen('game');
           } else {
-            // If pending, rejected, or anything else, they CANNOT be in game.
-            // Force them to participant_lobby (waiting room).
             if (currentScreen !== 'participant_lobby') setCurrentScreen('participant_lobby');
           }
         } else {
-          // If NOT playing (e.g. waiting), they should NOT be in 'game'.
           const partLobbyScreens: AppScreen[] = ['participant_lobby', 'customization', 'audio_settings', 'home', 'store', 'profile', 'ranking', 'messages', 'chat', 'friends'];
           if (!partLobbyScreens.includes(currentScreen)) setCurrentScreen('participant_lobby');
         }
         return;
       }
 
-      // Cleanup if no active room found 
-      console.log("App Watchdog: No active participation found. Cleaning up.");
-      // 6. Cleanup if no active room found but we are in a room screen
+      // If we reach here, we found a persistedId but NO active role was found in DB
+      console.log(`[Watchdog] No role found for user ${session.user.id} in room ${persistedId}.`);
       if ((roomId || currentScreen === 'lobby' || currentScreen === 'participant_lobby' || currentScreen === 'game') && !tutorialActive) {
-        console.log(`[Watchdog] Final fallback cleanup. roomId=${roomId}, screen=${currentScreen}`);
+        console.log("[Watchdog] Wiping stale local state.");
         clearBingolaLocalState();
         setRoomId(null);
         setCurrentScreen('home');
@@ -374,21 +391,13 @@ const App: React.FC = () => {
 
     run();
     return () => { cancelled = true; };
-  }, [session?.user?.id, currentScreen, roomId]);
+  }, [session?.user?.id, currentScreen, roomId, lastInteraction, isSessionClaimed]);
 
-  const navigateToCustom = (from: AppScreen) => {
-    setCustomReturnScreen(from);
-    setCurrentScreen('customization');
-  };
-
-  const navigateToAudio = (from: AppScreen) => {
-    setAudioReturnScreen(from);
-    setCurrentScreen('audio_settings');
-  };
+  const navigateToCustom = (from: AppScreen) => { setCustomReturnScreen(from); setCurrentScreen('customization'); };
+  const navigateToAudio = (from: AppScreen) => { setAudioReturnScreen(from); setCurrentScreen('audio_settings'); };
 
   const renderScreen = () => {
     if (loading && currentScreen === 'splash') return <SplashScreen />;
-
     switch (currentScreen) {
       case 'splash': return <SplashScreen />;
       case 'login': return <LoginScreen onLogin={() => setCurrentScreen('home')} onGoToRegister={() => setCurrentScreen('register')} />;
@@ -414,11 +423,7 @@ const App: React.FC = () => {
       case 'game': return activeRoom?.id ? (
         <GameScreen
           roomInfo={activeRoom}
-          onBack={() => {
-            setCurrentScreen('home');
-            // Do NOT clear state here. GameScreen handles "Permanent Exit". 
-            // "Temporary Exit" just navigates home.
-          }}
+          onBack={() => setCurrentScreen('home')}
           onWin={() => setCurrentScreen('winners')}
           onNavigate={(s) => {
             if (s === 'customization') navigateToCustom('game');
@@ -430,25 +435,9 @@ const App: React.FC = () => {
         <div className="flex flex-col items-center justify-center h-[100dvh] text-white/50 bg-background-dark p-8 text-center">
           <div className="size-16 border-4 border-primary/20 border-t-primary rounded-full animate-spin mb-6"></div>
           <p className="animate-pulse mb-2 text-white font-black italic uppercase tracking-widest">Sincronizando mesa...</p>
-          <p className="text-[10px] text-white/30 max-w-[200px] mb-8">Aguardando dados oficiais do servidor. Verifique sua conexão.</p>
-
-          <div className="flex flex-col gap-4 w-full max-w-[200px]">
-            <button
-              onClick={() => setCurrentScreen('home')}
-              className="w-full h-12 bg-white/5 text-white/40 font-black rounded-xl text-[10px] uppercase tracking-widest hover:bg-white/10 transition-all"
-            >
-              Voltar para Home
-            </button>
-
-            <button onClick={() => {
-              setNoResume();
-              clearBingolaLocalState();
-              useRoomStore.getState().setRoomId(null);
-              setCurrentScreen('home');
-              window.location.reload();
-            }} className="w-full h-12 border border-red-500/20 text-red-500/60 font-black rounded-xl text-[10px] uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all">
-              Travou? Forçar Saída
-            </button>
+          <div className="flex flex-col gap-4 w-full max-w-[200px] mt-8">
+            <button onClick={() => setCurrentScreen('home')} className="w-full h-12 bg-white/5 text-white/40 font-black rounded-xl text-[10px] uppercase tracking-widest">Home</button>
+            <button onClick={() => { setNoResume(); clearBingolaLocalState(); useRoomStore.getState().setRoomId(null); window.location.reload(); }} className="w-full h-12 border border-red-500/20 text-red-500/60 font-black rounded-xl text-[10px] uppercase tracking-widest">Forçar Saída</button>
           </div>
         </div>
       );
@@ -472,7 +461,6 @@ const App: React.FC = () => {
         else setCurrentScreen(s.room?.host_id === s.currentUserId ? 'lobby' : 'participant_lobby');
       }} />;
       case 'friends': return <SocialScreen onBack={() => setCurrentScreen('home')} onNavigate={setCurrentScreen} />;
-      case 'edit_card': return <CustomizationScreen onBack={() => setCurrentScreen('participant_lobby')} />;
       default: return <HomeScreen onNavigate={setCurrentScreen} />;
     }
   };
@@ -485,9 +473,7 @@ const App: React.FC = () => {
         <BackgroundMusic currentScreen={currentScreen} />
         <GlobalMusicHeader currentScreen={currentScreen} />
         <TutorialOverlay onNavigate={setCurrentScreen} />
-        <div className="flex-1 relative flex flex-col">
-          {renderScreen()}
-        </div>
+        <div className="flex-1 relative flex flex-col">{renderScreen()}</div>
       </div>
     </div>
   );

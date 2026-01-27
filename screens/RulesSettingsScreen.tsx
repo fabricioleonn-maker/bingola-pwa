@@ -78,7 +78,7 @@ export const RulesSettingsScreen: React.FC<Props> = ({ onBack }) => {
         <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em] mb-6">Selecione os padrões aceitos</p>
 
         {[
-          { id: 'cinquina', name: 'Cinquina', desc: '5 números em linha horizontal' },
+          { id: 'cinquina', name: 'Cinquina', desc: 'Linha horizontal, vertical e diagonal' },
           { id: 'cantos', name: 'Cantos', desc: 'Os 4 cantos da cartela' },
           { id: 'x', name: 'Cartela em X', desc: 'Duas diagonais completas' },
           { id: 'cheia', name: 'Cartela Cheia', desc: 'Todos os números (Obrigatório)', locked: true }

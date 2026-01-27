@@ -15,10 +15,18 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
   const [uploading, setUploading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [newName, setNewName] = useState('');
+  const [isMaster, setIsMaster] = useState(false);
+  const [appSettings, setAppSettings] = useState<any>(null);
 
   const fetchProfile = async () => {
     const { data: { user: authUser } } = await supabase.auth.getUser();
     if (authUser) {
+      if (authUser.email?.toLowerCase() === 'fabricio.leonn@gmail.com') {
+        setIsMaster(true);
+        const { data: settings } = await supabase.from('app_settings').select('*').eq('id', 1).single();
+        if (settings) setAppSettings(settings);
+      }
+
       const { data: profile } = await supabase
         .from('profiles')
         .select('*')
@@ -136,6 +144,44 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
     setTimeout(() => setIsUpdating(false), 1000);
   };
 
+  const handleManualReset = async () => {
+    if (!isMaster) return;
+    useNotificationStore.getState().confirm({
+      title: "Zerar Todos os BPoints?",
+      message: "Tem certeza? Isso resetará a pontuação de TODOS os jogadores do Ranking para zero.",
+      onConfirm: async () => {
+        setIsUpdating(true);
+        const { error } = await supabase.from('profiles').update({ bpoints: 0 }).neq('id', '00000000-0000-0000-0000-000000000000'); // Dummy condition to update all
+        if (!error) {
+          await supabase.from('app_settings').update({ last_bpoints_reset: new Date().toISOString() }).eq('id', 1);
+          useNotificationStore.getState().show("Todos os BPoints foram resetados!", 'success');
+          fetchProfile();
+        }
+        setIsUpdating(false);
+      }
+    });
+  };
+
+  const handleUpdateResetMode = async (mode: string) => {
+    if (!isMaster) return;
+    const { error } = await supabase.from('app_settings').update({ bpoints_reset_mode: mode }).eq('id', 1);
+    if (!error) {
+      setAppSettings({ ...appSettings, bpoints_reset_mode: mode });
+      useNotificationStore.getState().show(`Ciclo de reset alterado para: ${mode}`, 'success');
+    }
+  };
+
+  const shareReferral = () => {
+    if (!user?.referral_code) return;
+    const text = `Vem jogar Bingola comigo! Use meu código de indicação: ${user.referral_code} na loja para ganhar bônus! 🎱✨`;
+    if (navigator.share) {
+      navigator.share({ title: 'Bingola', text, url: window.location.origin });
+    } else {
+      navigator.clipboard.writeText(user.referral_code);
+      useNotificationStore.getState().show("Código copiado!", 'success');
+    }
+  };
+
   return (
     <div className="flex flex-col min-h-screen bg-background-dark">
       <header className="sticky top-0 z-20 bg-background-dark/95 backdrop-blur-md p-4 border-b border-white/5 flex items-center justify-between">
@@ -228,11 +274,32 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
             <p className="text-[10px] font-black uppercase tracking-widest text-white/30">Saldo BCOINS</p>
             <p className="text-xl font-black mt-1 text-white">B$ {user?.bcoins || 0}</p>
           </div>
-          <div className="bg-surface-dark p-5 rounded-3xl border border-white/5">
+          <div className="bg-surface-dark p-5 rounded-3xl border border-white/5 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-16 h-16 bg-green-500/5 blur-2xl"></div>
             <span className="material-symbols-outlined text-3xl mb-3 text-green-500">military_tech</span>
-            <p className="text-[10px] font-black uppercase tracking-widest text-white/30">BPOINTS</p>
-            <p className="text-xl font-black mt-1 text-green-500">1.250</p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-white/30">BPOINTS (Ranking)</p>
+            <p className="text-xl font-black mt-1 text-green-500">{user?.bpoints || 0}</p>
           </div>
+        </div>
+
+        {/* Referral Card */}
+        <div className="bg-gradient-to-br from-primary/20 to-purple-500/10 border border-white/10 rounded-[2.5rem] p-6 mb-8 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-primary/20 blur-3xl -mr-16 -mt-16 animate-pulse"></div>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em] mb-1">Seu Código de Indicação</p>
+              <h3 className="text-3xl font-black text-white italic tracking-tighter uppercase">{user?.referral_code || '------'}</h3>
+            </div>
+            <button
+              onClick={shareReferral}
+              className="size-14 bg-primary text-black rounded-2xl flex items-center justify-center shadow-lg active:scale-95 transition-all"
+            >
+              <span className="material-symbols-outlined font-black">share</span>
+            </button>
+          </div>
+          <p className="text-[10px] text-white/40 leading-relaxed">
+            Convide amigos e ganhe 50 BCOINS quando eles usarem seu código na primeira compra!
+          </p>
         </div>
 
         <div className="space-y-4">
@@ -270,6 +337,51 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
             </div>
             <span className="material-symbols-outlined text-white/20">chevron_right</span>
           </button>
+
+          {isMaster && (
+            <>
+              <h3 className="text-[10px] font-black uppercase tracking-widest text-primary px-1 pt-6 flex items-center gap-2">
+                <span className="material-symbols-outlined text-sm">construction</span>
+                Painel Master Administrativo
+              </h3>
+
+              <div className="bg-primary/5 border border-primary/20 rounded-[2.5rem] p-6 space-y-6">
+                <div>
+                  <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-4">Ciclo de Reset de BPoints</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {['manual', 'daily', 'weekly', 'biweekly', 'monthly'].map(mode => (
+                      <button
+                        key={mode}
+                        onClick={() => handleUpdateResetMode(mode)}
+                        className={`py-2 px-3 rounded-xl text-[9px] font-black uppercase border transition-all ${appSettings?.bpoints_reset_mode === mode ? 'bg-primary border-primary text-black' : 'bg-white/5 border-white/10 text-white/40'}`}
+                      >
+                        {mode === 'manual' ? 'Desativado' :
+                          mode === 'daily' ? 'Diário' :
+                            mode === 'weekly' ? 'Semanal' :
+                              mode === 'biweekly' ? 'Quinzenal' : 'Mensal'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-white/5">
+                  <button
+                    onClick={handleManualReset}
+                    disabled={isUpdating}
+                    className="w-full h-14 bg-red-500 text-white font-black rounded-2xl flex items-center justify-center gap-3 shadow-lg shadow-red-500/20 active:scale-95 transition-all"
+                  >
+                    <span className="material-symbols-outlined">restart_alt</span>
+                    ZERAR TODOS OS BPOINTS AGORA
+                  </button>
+                  {appSettings?.last_bpoints_reset && (
+                    <p className="text-center text-[8px] text-white/20 font-bold mt-2 uppercase">
+                      Último reset: {new Date(appSettings.last_bpoints_reset).toLocaleString('pt-BR')}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
 
           <h3 className="text-[10px] font-black uppercase tracking-widest text-white/30 px-1 pt-4">Ações Rápidas</h3>
 
