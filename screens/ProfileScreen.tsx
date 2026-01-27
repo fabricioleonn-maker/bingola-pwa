@@ -21,6 +21,14 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
   const [adminTimeLeft, setAdminTimeLeft] = useState('');
   const [isResetting, setIsResetting] = useState(false);
 
+  // Master Management State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
+  const [giftAmount, setGiftAmount] = useState('');
+  const [showExtrato, setShowExtrato] = useState(false);
+  const [transactions, setTransactions] = useState<any[]>([]);
+
   const fetchProfile = async () => {
     const { data: { user: authUser } } = await supabase.auth.getUser();
 
@@ -272,6 +280,78 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
     }
   };
 
+  const fetchTransactions = async () => {
+    if (!isMaster) return;
+    const { data, error } = await supabase
+      .from('bcoins_transactions')
+      .select('*, profiles:user_id(username)')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error("Error fetching transactions:", error);
+      return;
+    }
+    setTransactions(data || []);
+  };
+
+  const handleSearchPlayer = async () => {
+    if (!searchQuery.trim() || !isMaster) return;
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .ilike('username', `%${searchQuery.trim()}%`)
+      .limit(5);
+    setSearchResults(data || []);
+  };
+
+  const handleManageBCoins = async (type: 'gift' | 'withdraw') => {
+    if (!selectedPlayer || !giftAmount || !isMaster) return;
+    const amount = parseInt(giftAmount);
+    if (isNaN(amount) || amount <= 0) return;
+
+    const finalAmount = type === 'gift' ? amount : -amount;
+    setIsUpdating(true);
+
+    try {
+      // 1. Update Profile
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({ bcoins: (selectedPlayer.bcoins || 0) + finalAmount })
+        .eq('id', selectedPlayer.id);
+
+      if (profileError) throw profileError;
+
+      // 2. Record Transaction
+      const { error: txError } = await supabase.from('bcoins_transactions').insert({
+        user_id: selectedPlayer.id,
+        master_id: user.id,
+        amount: finalAmount,
+        type: type,
+        reason: type === 'gift' ? 'Presente Master' : 'Retirada Master'
+      });
+
+      if (txError) {
+        console.error("TX Error:", txError);
+        // Don't throw, balance was updated, but extrato might be missing
+      }
+
+      useNotificationStore.getState().show(
+        `Sucesso: ${type === 'gift' ? 'Enviado' : 'Retirado'} ${amount} BCOINS para @${selectedPlayer.username}`,
+        'success'
+      );
+
+      setSelectedPlayer(null);
+      setGiftAmount('');
+      setSearchQuery('');
+      setSearchResults([]);
+      fetchTransactions();
+    } catch (err: any) {
+      useNotificationStore.getState().show("Erro na gestão: " + err.message, 'error');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   const shareReferral = () => {
     if (!user?.referral_code) return;
     const text = `Vem jogar Bingola comigo! Use meu código de indicação: ${user.referral_code} na loja para ganhar bônus! 🎱✨`;
@@ -489,6 +569,77 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
                     </p>
                   )}
                 </div>
+
+                {/* Master Player Management */}
+                <div className="pt-6 border-t border-white/5 space-y-4">
+                  <p className="text-[10px] font-black text-white/40 uppercase tracking-widest">Gestão de Jogadores</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSearchPlayer()}
+                      placeholder="Buscar @username"
+                      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-[11px] font-black uppercase outline-none focus:border-primary/50"
+                    />
+                    <button onClick={handleSearchPlayer} className="px-4 bg-primary text-black rounded-xl font-black text-[10px] uppercase">Buscar</button>
+                  </div>
+
+                  {searchResults.length > 0 && !selectedPlayer && (
+                    <div className="bg-black/20 rounded-2xl p-2 space-y-1">
+                      {searchResults.map(p => (
+                        <button
+                          key={p.id}
+                          onClick={() => setSelectedPlayer(p)}
+                          className="w-full text-left p-3 hover:bg-white/5 rounded-xl flex items-center justify-between"
+                        >
+                          <span className="text-[11px] font-black text-white/60">@{p.username}</span>
+                          <span className="text-[9px] font-bold text-primary">Saldo: B$ {p.bcoins}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {selectedPlayer && (
+                    <div className="bg-primary/10 border border-primary/20 rounded-2xl p-4 space-y-4 animate-in slide-in-from-top-2">
+                      <div className="flex justify-between items-center">
+                        <p className="text-[10px] font-black text-primary uppercase">Gerenciando @{selectedPlayer.username}</p>
+                        <button onClick={() => setSelectedPlayer(null)} className="material-symbols-outlined text-primary text-lg">close</button>
+                      </div>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <input
+                          type="number"
+                          value={giftAmount}
+                          onChange={(e) => setGiftAmount(e.target.value)}
+                          placeholder="Quantidade"
+                          className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm font-black text-white outline-none min-w-0"
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleManageBCoins('gift')}
+                            className="flex-1 px-4 py-3 bg-green-500 text-black rounded-xl font-black text-[10px] uppercase shadow-lg shadow-green-500/20 active:scale-95 transition-all"
+                          >
+                            Dar
+                          </button>
+                          <button
+                            onClick={() => handleManageBCoins('withdraw')}
+                            className="flex-1 px-4 py-3 bg-red-500 text-black rounded-xl font-black text-[10px] uppercase shadow-lg shadow-red-500/20 active:scale-95 transition-all whitespace-nowrap"
+                          >
+                            Retirar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => { setShowExtrato(true); fetchTransactions(); }}
+                    className="w-full h-12 bg-white/5 border border-white/10 text-white/60 font-black rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all text-[10px] uppercase tracking-widest"
+                  >
+                    <span className="material-symbols-outlined text-lg">history_edu</span>
+                    Extrato de Movimentações
+                  </button>
+                </div>
               </div>
             </>
           )}
@@ -538,6 +689,42 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
           <span className="text-[10px] font-bold">Perfil</span>
         </button>
       </nav>
+
+      {/* Extrato Modal */}
+      {showExtrato && (
+        <div className="fixed inset-0 z-[300] bg-background-dark/95 backdrop-blur-xl flex flex-col animate-in fade-in duration-300">
+          <header
+            style={{ paddingTop: 'env(safe-area-inset-top)' }}
+            className="p-4 border-b border-white/5 flex items-center justify-between"
+          >
+            <button onClick={() => setShowExtrato(false)} className="w-10 h-10 flex items-center justify-center">
+              <span className="material-symbols-outlined text-white">close</span>
+            </button>
+            <h3 className="font-black italic uppercase tracking-widest text-sm">Extrato Geral</h3>
+            <div className="w-10"></div>
+          </header>
+
+          <main className="flex-1 overflow-y-auto p-6 space-y-4">
+            {transactions.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-white/20 space-y-4">
+                <span className="material-symbols-outlined text-6xl">receipt_long</span>
+                <p className="font-black uppercase tracking-widest text-xs">Nenhuma movimentação</p>
+              </div>
+            ) : transactions.map(tx => (
+              <div key={tx.id} className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-between">
+                <div className="space-y-1">
+                  <p className="text-[10px] font-black text-white/30 uppercase tracking-widest">@{tx.profiles?.username || 'user'}</p>
+                  <p className="text-xs font-bold text-white/60">{tx.reason || 'Movimentação'}</p>
+                  <p className="text-[8px] text-white/20 uppercase font-black">{new Date(tx.created_at).toLocaleString('pt-BR')}</p>
+                </div>
+                <div className={`text-lg font-black ${tx.amount > 0 ? 'text-green-500' : 'text-red-500'}`}>
+                  {tx.amount > 0 ? '+' : ''}{tx.amount}
+                </div>
+              </div>
+            ))}
+          </main>
+        </div>
+      )}
     </div>
   );
 };

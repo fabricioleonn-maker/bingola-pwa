@@ -44,15 +44,16 @@ const GlobalMusicHeader: React.FC<Props> = ({ currentScreen }) => {
 
     return (
         <div
+            onClick={() => !isExpanded && setIsExpanded(true)}
             style={{
                 height: isExpanded ? 'auto' : undefined,
-                paddingTop: 'env(safe-area-inset-top)'
+                paddingTop: 'env(safe-area-inset-top)',
             }}
-            className={`fixed top-0 left-0 right-0 z-[200] flex flex-col items-center transition-all duration-500 ease-in-out ${isExpanded ? 'bg-background-dark/95 backdrop-blur-xl border-b border-white/10 pb-6' : 'h-10 group bg-background-dark/40 backdrop-blur-md border-b border-white/5'}`}>
+            className={`fixed top-0 left-0 right-0 z-[200] flex flex-col items-center transition-all duration-500 ease-in-out ${isExpanded ? 'bg-background-dark/95 backdrop-blur-xl border-b border-white/10 pb-6' : 'min-h-[calc(env(safe-area-inset-top)+40px)] group bg-background-dark/40 backdrop-blur-md border-b border-white/5 cursor-pointer'}`}>
             {/* The "Invisible" Trigger Bar */}
             <div
-                onClick={() => setIsExpanded(!isExpanded)}
-                className={`w-full flex items-center justify-between px-4 cursor-pointer transition-all ${isExpanded ? 'h-10' : 'h-full hover:bg-white/5'}`}
+                onClick={(e) => { if (isExpanded) { e.stopPropagation(); setIsExpanded(false); } }}
+                className={`w-full flex items-center justify-between px-4 transition-all ${isExpanded ? 'h-10 cursor-pointer' : 'flex-1 hover:bg-white/5'}`}
             >
                 {/* Fixed Overlap: Shift Handle to the left */}
                 <div className="flex-1 flex justify-start pl-6">

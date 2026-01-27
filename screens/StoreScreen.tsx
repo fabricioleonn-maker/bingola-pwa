@@ -318,12 +318,20 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
             {isPromoApplied && <p className="text-green-500 text-[10px] font-bold uppercase">Código de @{referrerName} Ativo! -10% DESCONTO 🔥</p>}
           </div>
 
+          {/* Information regarding future App Store integration */}
+          <div className="bg-primary/10 border border-primary/20 rounded-2xl p-4 mb-2">
+            <p className="text-[10px] text-primary font-black uppercase text-center leading-tight">
+              A Loja está em manutenção para integração oficial com Play Store e App Store.
+              <br /><span className="text-white/40">Pagamentos diretos estão suspensos temporariamente.</span>
+            </p>
+          </div>
+
           <button
-            onClick={finalizePurchase}
-            disabled={cart.length === 0 || isFinishing}
-            className="w-full h-20 bg-primary text-white font-black text-xl rounded-2xl shadow-2xl shadow-primary/30 active:scale-95 transition-all disabled:opacity-20 disabled:grayscale uppercase italic"
+            onClick={() => useNotificationStore.getState().show("Compras serão liberadas na atualização das Lojas de Aplicativos.", 'info')}
+            disabled={true}
+            className="w-full h-20 bg-white/5 text-white/20 font-black text-xl rounded-2xl border border-white/5 active:scale-95 transition-all uppercase italic"
           >
-            {isFinishing ? 'PROCESSANDO...' : 'CONCLUIR COMPRA'}
+            COMPRAS SUSPENSAS
           </button>
         </section>
       </main>
