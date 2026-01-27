@@ -32,6 +32,7 @@ import { PersistentGameLoop } from './components/PersistentGameLoop';
 import BackgroundMusic from './components/BackgroundMusic';
 import GlobalMusicHeader from './components/GlobalMusicHeader';
 import TutorialOverlay from './components/TutorialOverlay';
+import { RewardNotificationModal } from './components/RewardNotificationModal';
 
 const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>('splash');
@@ -263,11 +264,11 @@ const App: React.FC = () => {
       await new Promise(r => setTimeout(r, 500));
       if (cancelled || myToken !== runTokenRef.current) return;
 
-      // 1. Inactivity Check (3 minutes)
+      // 1. Inactivity Check (15 minutes)
       const inactiveMs = Date.now() - lastInteraction;
-      if (inactiveMs > 180000) {
+      if (inactiveMs > 900000) {
         console.log("[Watchdog] Inactivity timeoutReached. Logging out.");
-        showNotify("Sessão encerrada por inatividade.", 'info');
+        showNotify("Sessão encerrada por inatividade (15 min).", 'info');
         if (roomId && session?.user?.id) {
           await useRoomStore.getState().hardExit(roomId, session.user.id);
         }
@@ -467,12 +468,13 @@ const App: React.FC = () => {
 
   return (
     <div className="bg-background-dark min-h-[100dvh]">
-      <div className="max-w-[430px] mx-auto min-h-[100dvh] relative shadow-2xl flex flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+      <div className={`max-w-[430px] mx-auto min-h-[100dvh] relative shadow-2xl flex flex-col pb-[env(safe-area-inset-bottom)] ${!['login', 'register', 'splash'].includes(currentScreen) ? 'pt-[calc(env(safe-area-inset-top)+40px)]' : 'pt-[env(safe-area-inset-top)]'}`}>
         <NotificationToast />
         <PersistentGameLoop />
         <BackgroundMusic currentScreen={currentScreen} />
         <GlobalMusicHeader currentScreen={currentScreen} />
         <TutorialOverlay onNavigate={setCurrentScreen} />
+        <RewardNotificationModal />
         <div className="flex-1 relative flex flex-col">{renderScreen()}</div>
       </div>
     </div>

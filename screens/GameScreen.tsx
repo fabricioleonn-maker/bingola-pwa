@@ -44,6 +44,7 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
 
   const [isMaster, setIsMaster] = useState(false);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [showRoomClosed, setShowRoomClosed] = useState(false);
   const [newInterval, setNewInterval] = useState(12);
   const [showVoiceModal, setShowVoiceModal] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
@@ -66,9 +67,10 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
   const handleLeavePermanent = async () => {
     if (currentUserId && roomId) {
       try {
-        await supabase.from('participants').delete().eq('room_id', roomId).eq('user_id', currentUserId);
-        useRoomStore.getState().setRoomId(null);
-        localStorage.removeItem('bingola_game_running'); // Ensure game state is cleared
+        if (isHost) {
+          await supabase.from('rooms').update({ status: 'finished' }).eq('id', roomId);
+        }
+        await useRoomStore.getState().hardExit(roomId, currentUserId);
         onBack();
       } catch (err) {
         console.error("Error leaving room:", err);
@@ -193,11 +195,15 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
   useEffect(() => {
     if (room?.status === 'finished' && !finishedAlertedRef.current) {
       finishedAlertedRef.current = true;
-      useNotificationStore.getState().show("A mesa foi encerrada pelo anfitrião.", 'info');
       localStorage.removeItem('bingola_last_winner');
       localStorage.setItem('bingola_is_paused', 'false');
-      setWinnerAnnouncement(null);
-      onBack();
+
+      if (!isHost) {
+        setShowRoomClosed(true);
+      } else {
+        setWinnerAnnouncement(null);
+        onBack();
+      }
     }
   }, [room?.status, onBack]);
 
@@ -607,8 +613,8 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
   const togglePause = () => {
     const newVal = !isPaused;
 
-    // If resuming while a winner announcement is active, clear it for everyone
-    if (!newVal && winnerAnnouncement && isHost) {
+    // If resuming, clear winner announcement and broadcast to everyone
+    if (!newVal) {
       if (winnerChannelRef.current) {
         winnerChannelRef.current.send({
           type: 'broadcast',
@@ -620,7 +626,9 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
 
     localStorage.setItem('bingola_is_paused', String(newVal));
     setIsPaused(newVal);
-    if (!newVal) localStorage.removeItem('bingola_last_winner');
+    if (!newVal) {
+      localStorage.removeItem('bingola_last_winner');
+    }
   };
 
   const [showEndGameModal, setShowEndGameModal] = useState(false);
@@ -796,7 +804,7 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
 
     setMarked(JSON.parse(localStorage.getItem(markedKey) || '[]'));
     setClaimedPrizes(JSON.parse(localStorage.getItem(claimedKey) || '[]'));
-  }, [gridKey, markedKey, claimedKey, generateGrid]);
+  }, [gridKey, markedKey, claimedKey, generateGrid, isHost]);
 
   if (showLoader) {
     return (
@@ -834,6 +842,33 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
         <div className="absolute top-[-10%] right-[-10%] w-[500px] h-[500px] bg-primary/20 rounded-full blur-[100px] animate-pulse"></div>
         <div className="absolute bottom-[-10%] left-[-10%] w-[500px] h-[500px] bg-blue-500/10 rounded-full blur-[100px] animate-pulse delay-1000"></div>
       </div>
+
+      {showRoomClosed && (
+        <div className="fixed inset-0 z-[500] bg-black/95 backdrop-blur-xl flex items-center justify-center p-8 animate-in zoom-in duration-300">
+          <div className="bg-surface-dark border border-white/10 p-10 rounded-[3rem] w-full max-w-sm text-center shadow-2xl space-y-8 relative overflow-hidden">
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-32 bg-red-600/20 blur-3xl -mt-16"></div>
+
+            <div className="size-24 bg-red-500 rounded-full flex items-center justify-center mx-auto shadow-lg shadow-red-500/20 animate-pulse">
+              <span className="material-symbols-outlined text-white text-5xl">cancel</span>
+            </div>
+
+            <div className="space-y-4">
+              <h2 className="text-3xl font-black italic uppercase tracking-tighter text-white">Mesa Encerrada!</h2>
+              <p className="text-white/40 text-sm leading-relaxed">O anfitrião encerrou esta sessão. Você será redirecionado para a tela inicial.</p>
+            </div>
+
+            <button
+              onClick={() => {
+                useRoomStore.getState().setRoomId(null);
+                onBack();
+              }}
+              className="w-full h-16 bg-white text-black rounded-2xl font-black text-sm uppercase tracking-widest active:scale-95 transition-all shadow-[0_0_40px_rgba(255,255,255,0.1)]"
+            >
+              Voltar ao Início
+            </button>
+          </div>
+        </div>
+      )}
 
       <header className="relative z-10 px-4 pt-4 pb-2 flex flex-col gap-4">
         {/* Horizontal Action Bar - Unified & Scrollable */}
@@ -926,7 +961,7 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
 
           <div className="flex flex-col items-end">
             <span className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] leading-none mb-1">HOST</span>
-            <span className="text-xs font-bold text-white/60">{isHost ? 'Você' : (roomInfo as any)?.host_name || 'Anfitrião'}</span>
+            <span className="text-xs font-bold text-white/60">{isHost ? 'Você' : (roomInfo as any)?.host_profile?.username || (roomInfo as any)?.host_name || 'Anfitrião'}</span>
           </div>
         </div>
       </header>
@@ -1084,30 +1119,37 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
 
             return (
               <div className="w-full max-w-sm space-y-3">
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                  <p className="text-[10px] font-black text-white/30 uppercase tracking-widest mb-1">30% DO POTE DA RODADA</p>
+                <div className={`border rounded-2xl p-4 transition-all ${secPrize ? 'bg-green-500/10 border-green-500/20' : 'bg-white/5 border-white/10'}`}>
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-[10px] font-black text-white/30 uppercase tracking-widest">30% DO POTE DA RODADA</p>
+                    {secPrize && <span className="text-[8px] font-black bg-green-500 text-white px-2 py-0.5 rounded-full animate-pulse">SAIU!</span>}
+                  </div>
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-black text-sm text-white">
+                      <p className={`font-black text-sm ${secPrize ? 'text-green-500' : 'text-white'}`}>
                         {secPrize ? secPrize.type : 'Prêmio Secundário'}
                       </p>
                       <p className="text-[10px] font-bold text-white/40">
                         {secPrize ? `Vencedor: ${secPrize.winner}` : 'Aguardando vencedor...'}
                       </p>
                     </div>
-                    <p className="font-black text-green-500">B$ {formatValue(Math.floor(pot * 0.3))}</p>
+                    <p className={`font-black ${secPrize ? 'text-green-500' : 'text-white/60'}`}>B$ {formatValue(Math.floor(pot * 0.3))}</p>
                   </div>
                 </div>
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                  <p className="text-[10px] font-black text-white/30 uppercase tracking-widest mb-1">70% DO POTE DA RODADA</p>
+
+                <div className={`border rounded-2xl p-4 transition-all ${claimedPrizes.some(p => p.type === 'Cartela Cheia') ? 'bg-green-500/10 border-green-500/20' : 'bg-white/5 border-white/10'}`}>
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-[10px] font-black text-white/30 uppercase tracking-widest">70% DO POTE DA RODADA</p>
+                    {claimedPrizes.some(p => p.type === 'Cartela Cheia') && <span className="text-[8px] font-black bg-green-500 text-white px-2 py-0.5 rounded-full animate-pulse">FINALIZOU!</span>}
+                  </div>
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-black text-sm text-white">Cartela Cheia</p>
+                      <p className={`font-black text-sm ${claimedPrizes.some(p => p.type === 'Cartela Cheia') ? 'text-green-500' : 'text-white'}`}>Cartela Cheia</p>
                       <p className="text-[10px] font-bold text-white/40">
                         {claimedPrizes.find(p => p.type === 'Cartela Cheia')?.winner ? `Vencedor: ${claimedPrizes.find(p => p.type === 'Cartela Cheia').winner}` : 'Boa sorte! 🧿'}
                       </p>
                     </div>
-                    <p className="font-black text-green-500">B$ {formatValue(Math.floor(pot * 0.7))}</p>
+                    <p className={`font-black ${claimedPrizes.some(p => p.type === 'Cartela Cheia') ? 'text-green-500' : 'text-white/60'}`}>B$ {formatValue(Math.floor(pot * 0.7))}</p>
                   </div>
                 </div>
               </div>

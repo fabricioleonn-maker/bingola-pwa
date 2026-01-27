@@ -44,6 +44,7 @@ type RoomStore = {
 
   inFlight: Record<string, boolean>;
   myStatus: 'pending' | 'accepted' | 'rejected' | null;
+  notifiedLeaverIds: string[]; // Avoid duplicates
 
   setRoomId: (id: string | null) => void;
 
@@ -94,6 +95,7 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
 
   inFlight: {},
   myStatus: null,
+  notifiedLeaverIds: [],
 
   _cleanupSubscription: () => {
     const { channel } = get();
@@ -157,7 +159,7 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
 
     const { data: room, error: roomErr } = await supabase
       .from('rooms')
-      .select('*')
+      .select('*, host_profile:host_id(username)')
       .eq('id', roomId)
       .single();
 
@@ -169,28 +171,46 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
         room: null,
         pending: [],
         accepted: [],
+        notifiedLeaverIds: [],
         lastError: roomErr?.message ?? 'room not found',
       });
       return;
     }
 
     const drawn = Array.isArray((room as any).drawn_numbers) ? (room as any).drawn_numbers : [];
-    set({ room: { ...(room as any), drawn_numbers: drawn } });
+
+    // Set current user ID immediately before any participant logic
+    const { data: { user } } = await supabase.auth.getUser();
+    set({
+      room: { ...(room as any), drawn_numbers: drawn },
+      currentUserId: user?.id || null,
+      notifiedLeaverIds: []
+    });
 
     await get().refreshParticipants(roomId);
   },
 
   refreshParticipants: async (roomId) => {
     if (roomId === 'tutorial-mock') return;
-    // 1. Participantes
+
+    // 0. CAPTURE old state IMMEDIATELY at the top to avoid race conditions
+    const oldParticipants = [...get().accepted, ...get().pending];
+    const currentRoom = get().room;
+
+    // 1. Sync User FIRST
+    const { data: { session } } = await supabase.auth.getSession();
+    const currentUserId = session?.user?.id || null;
+    if (currentUserId) set({ currentUserId });
+
+    // 2. Fetch fresh participants
     const { data, error } = await supabase
       .from('participants')
       .select('*, profiles(username, avatar_url, level, bcoins)')
       .eq('room_id', roomId)
       .in('status', ['pending', 'accepted', 'rejected']);
 
-    // Guard: se mudou de sala no meio
-    if (get().roomId && get().roomId !== roomId && get().subscribedRoomId !== roomId) return;
+    // Guard: ignore if room changed during fetch
+    if (get().roomId !== roomId && get().subscribedRoomId !== roomId) return;
 
     if (error) {
       set({ lastError: error.message });
@@ -199,29 +219,45 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
 
     const pending = (data ?? []).filter((p: any) => p.status === 'pending');
     const accepted = (data ?? []).filter((p: any) => p.status === 'accepted');
+    const newParticipants = [...accepted, ...pending];
+
+    // 3. DETECTION LOGIC - Compare lists
+    const isHost = currentRoom?.host_id === currentUserId;
+
+    if (isHost && currentUserId && oldParticipants.length > 0) {
+      const leavers = oldParticipants.filter(old => !newParticipants.some(now => now.id === old.id));
+      const alreadyNotified = get().notifiedLeaverIds;
+
+      leavers.forEach(l => {
+        // Notification for host only, and only if it's not the host (safety skip)
+        // AND check if we already notified via direct Realtime DELETE
+        if (l.user_id !== currentUserId && !alreadyNotified.includes(l.id)) {
+          const name = l.profiles?.username || 'Um jogador';
+          useNotificationStore.getState().show(`${name} abandonou a mesa.`, 'info');
+          set(s => ({ notifiedLeaverIds: [...s.notifiedLeaverIds, l.id] }));
+        }
+      });
+    }
+
     set({ pending, accepted });
 
     // 1b. Sync myStatus
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      set({ currentUserId: user.id });
+    if (session?.user) {
       // Direct fetch for my status to be sure (including rejected)
       const { data: myPart } = await supabase.from('participants')
         .select('status')
         .eq('room_id', roomId)
-        .eq('user_id', user.id)
+        .eq('user_id', session.user.id)
         .maybeSingle();
 
       if (myPart) set({ myStatus: myPart.status as any });
       else set({ myStatus: null });
-    } else {
-      set({ currentUserId: null });
     }
 
     // 2. Refresh rápido no status da sala
     const { data: roomData } = await supabase
       .from('rooms')
-      .select('*')
+      .select('*, host_profile:host_id(username)')
       .eq('id', roomId)
       .single();
 
@@ -262,13 +298,17 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
 
           // Closure detection for participants
           if (newRoom.status === 'finished' && current?.status !== 'finished') {
-            const isHost = newRoom.host_id === (supabase.auth.getUser() as any).data?.user?.id;
+            const currentUserId = get().currentUserId;
+            const isHost = newRoom.host_id === currentUserId;
             if (!isHost) {
               useNotificationStore.getState().show("A mesa foi encerrada pelo anfitrião.", 'info');
               // Immediate cleanup
               setTimeout(() => {
                 get().setRoomId(null);
-              }, 2000);
+                // Force navigation back to home? 
+                // Since this is in the store, we can't easily navigate directly, 
+                // but setting roomId to null will trigger the GameScreen's redirect if implemented.
+              }, 1500);
             }
           }
 
@@ -287,8 +327,28 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'participants', filter: `room_id=eq.${roomId}` },
-        () => {
+        (payload) => {
           if (get().subscribedRoomId !== roomId) return;
+
+          // Direct detection for DELETE events (Faster than waiting for refresh comparison)
+          if (payload.eventType === 'DELETE' && payload.old) {
+            const state = get();
+            const currentUserId = state.currentUserId;
+            const isHost = state.room?.host_id === currentUserId;
+
+            if (isHost && currentUserId) {
+              const oldId = payload.old.id;
+              const p = [...state.accepted, ...state.pending].find(x => x.id === oldId);
+
+              if (p && p.user_id !== currentUserId && !state.notifiedLeaverIds.includes(oldId)) {
+                const name = p.profiles?.username || 'Um jogador';
+                useNotificationStore.getState().show(`${name} abandonou a mesa.`, 'info');
+                set(s => ({ notifiedLeaverIds: [...s.notifiedLeaverIds, oldId] }));
+              }
+            }
+          }
+
+          // Trigger state refresh for everyone
           get().refreshParticipants(roomId);
         }
       )

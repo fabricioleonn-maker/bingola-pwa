@@ -18,14 +18,20 @@ const GlobalMusicHeader: React.FC<Props> = ({ currentScreen }) => {
             setIsRevealed(true);
             if (revealTimeoutRef.current) clearTimeout(revealTimeoutRef.current);
         } else {
-            // If paused, start 3s timer to hide
+            // If paused, minimize and wait 5s to hide ghost controls
+            setIsExpanded(false);
             if (revealTimeoutRef.current) clearTimeout(revealTimeoutRef.current);
             revealTimeoutRef.current = setTimeout(() => {
-                if (!isPlaying) setIsRevealed(false);
-            }, 3000);
+                setIsRevealed(false);
+            }, 5000);
         }
         return () => { if (revealTimeoutRef.current) clearTimeout(revealTimeoutRef.current); };
     }, [isPlaying]);
+
+    // Hide on specific screens (Always called after all hooks)
+    if (currentScreen === 'login' || currentScreen === 'register' || currentScreen === 'splash') {
+        return null;
+    }
 
     const isFloating = currentScreen === 'game';
     const genres: { id: MusicGenre, label: string }[] = [
@@ -42,20 +48,21 @@ const GlobalMusicHeader: React.FC<Props> = ({ currentScreen }) => {
                 height: isExpanded ? 'auto' : undefined,
                 paddingTop: 'env(safe-area-inset-top)'
             }}
-            className={`fixed top-0 left-0 right-0 z-[200] flex flex-col items-center transition-all duration-500 ease-in-out ${isExpanded ? 'bg-background-dark/95 backdrop-blur-xl border-b border-white/10 pb-6' : 'h-8 hover:h-12 group bg-white/[0.02] hover:bg-white/[0.08]'}`}>
+            className={`fixed top-0 left-0 right-0 z-[200] flex flex-col items-center transition-all duration-500 ease-in-out ${isExpanded ? 'bg-background-dark/95 backdrop-blur-xl border-b border-white/10 pb-6' : 'h-10 group bg-background-dark/40 backdrop-blur-md border-b border-white/5'}`}>
             {/* The "Invisible" Trigger Bar */}
             <div
                 onClick={() => setIsExpanded(!isExpanded)}
-                className={`w-full flex items-center justify-between px-4 cursor-pointer transition-all ${isExpanded ? 'h-10' : 'h-full bg-primary/5 hover:bg-primary/20'}`}
+                className={`w-full flex items-center justify-between px-4 cursor-pointer transition-all ${isExpanded ? 'h-10' : 'h-full hover:bg-white/5'}`}
             >
-                <div className="flex-1 flex justify-center">
-                    <div className={`w-12 h-1.5 rounded-full bg-white/20 transition-all ${isExpanded ? 'rotate-180 bg-white/40' : 'group-hover:w-20 group-hover:bg-primary/60'}`} />
+                {/* Fixed Overlap: Shift Handle to the left */}
+                <div className="flex-1 flex justify-start pl-6">
+                    <div className={`w-12 h-1 rounded-full bg-white/20 transition-all ${isExpanded ? 'rotate-180 bg-white/40' : 'group-hover:w-20 group-hover:bg-primary/60'}`} />
                 </div>
 
                 {!isExpanded && (
                     <div
                         onClick={(e) => { e.stopPropagation(); setIsRevealed(true); }}
-                        className="absolute right-1 flex items-center gap-3 h-full px-2"
+                        className="absolute right-2 flex items-center gap-3 h-full px-2"
                     >
                         {/* Almost Invisible Controls (Ghost UI) */}
                         <div className={`flex items-center gap-1 transition-all duration-300 ${isRevealed ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'}`}>

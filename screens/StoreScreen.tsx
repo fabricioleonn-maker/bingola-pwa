@@ -18,20 +18,23 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
   const [cart, setCart] = useState<{ id: string, coins: number, price: number, title: string }[]>([]);
   const [isFinishing, setIsFinishing] = useState(false);
 
+  const [showThankYou, setShowThankYou] = useState(false);
+  const [lastPurchase, setLastPurchase] = useState<any>(null);
+
   useEffect(() => {
-    const fetchBalance = async () => {
+    const fetchBalanceAndProfile = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setProfileId(user.id);
         const { data: profile } = await supabase
           .from('profiles')
-          .select('bcoins')
+          .select('bcoins, referred_by')
           .eq('id', user.id)
-          .single();
+          .maybeSingle();
         if (profile) setBalance(profile.bcoins || 0);
       }
     };
-    fetchBalance();
+    fetchBalanceAndProfile();
   }, []);
 
   const addToCart = (pkg: any) => {
@@ -52,77 +55,91 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
   const getGrossTotal = () => cart.reduce((acc, item) => acc + item.price, 0);
   const getNetTotal = () => {
     const gross = getGrossTotal();
-    return isPromoApplied ? gross * 0.9 : gross; // 10% discount if promo applied
+    return isPromoApplied ? gross * 0.9 : gross;
   };
 
   const getTotalCoins = () => {
-    const base = cart.reduce((acc, item) => acc + item.coins, 0);
-    return isPromoApplied ? Math.floor(base * 1.1) : base; // 10% bonus coins if promo applied
+    return cart.reduce((acc, item) => acc + item.coins, 0);
   };
 
   const finalizePurchase = async () => {
     if (cart.length === 0) return;
     setIsFinishing(true);
 
+    const addedCoins = getTotalCoins();
+    const netTotal = getNetTotal();
+
     if (!profileId) {
-      const addedCoins = getTotalCoins();
-      setBalance(balance + addedCoins);
-      useNotificationStore.getState().show(`Checkout Simulado: +${addedCoins} BCOINS Adicionados!`, 'success');
+      // Offline/Guest simulation
+      setLastPurchase({
+        coins: addedCoins,
+        total: netTotal,
+        method: 'Simulado'
+      });
+      setShowThankYou(true);
       setCart([]);
       setIsFinishing(false);
       return;
     }
 
-    const addedCoins = getTotalCoins();
-    const newBalance = balance + addedCoins;
+    try {
+      console.log("[Store] Finalizing purchase. Referrer ID:", referrerId);
+      // Use RPC for atomic update and referral reward (bypasses RLS issues)
+      const { error: rpcError } = await supabase.rpc('process_bcoins_purchase', {
+        p_buyer_id: profileId,
+        p_coins_added: addedCoins,
+        p_referrer_id: referrerId
+      });
 
-    // 1. Update buyer
-    const { error } = await supabase
-      .from('profiles')
-      .update({ bcoins: newBalance })
-      .eq('id', profileId);
+      if (rpcError) {
+        console.error("RPC Error:", rpcError);
+        // Fallback (only buyer update, referrer might fail)
+        const { error: fallbackError } = await supabase
+          .from('profiles')
+          .update({ bcoins: balance + addedCoins, referred_by: referrerId || undefined })
+          .eq('id', profileId);
 
-    if (error) {
-      useNotificationStore.getState().show("Erro ao processar checkout. Tente novamente.", 'error');
-      setIsFinishing(false);
-      return;
-    }
-
-    // 2. Reward referrer if applicable
-    if (referrerId) {
-      const { data: myProfile } = await supabase.from('profiles').select('referred_by').eq('id', profileId).single();
-      if (myProfile && !myProfile.referred_by) {
-        const { data: refProfile } = await supabase.from('profiles').select('bcoins').eq('id', referrerId).single();
-        if (refProfile) {
-          await supabase.from('profiles').update({ bcoins: (refProfile.bcoins || 0) + 50 }).eq('id', referrerId);
-        }
-        await supabase.from('profiles').update({ referred_by: referrerId }).eq('id', profileId);
+        if (fallbackError) throw fallbackError;
       }
+
+      setLastPurchase({
+        coins: addedCoins,
+        total: netTotal,
+        method: 'PIX / Crédito',
+        date: new Date().toLocaleString('pt-BR')
+      });
+
+      setBalance(balance + addedCoins);
+      setIsPromoApplied(false);
+      setPromoCode('');
+      setReferrerId(null);
+      setCart([]);
+      setShowThankYou(true);
+    } catch (err: any) {
+      useNotificationStore.getState().show("Erro ao processar checkout: " + err.message, 'error');
+    } finally {
+      setIsFinishing(false);
     }
-
-    setBalance(newBalance);
-    setIsPromoApplied(false);
-    setPromoCode('');
-    setReferrerId(null);
-    setCart([]);
-    setIsFinishing(false);
-    useNotificationStore.getState().show(`Checkout Concluído! +${addedCoins} BCOINS Adicionados.`, 'success');
-
-    // Future integration placeholder
-    console.log("[Checkout] Redirecting to payment platform...");
-    // onBack(); 
   };
 
   const applyPromoCode = async () => {
     setPromoError('');
-    if (!promoCode.trim()) return;
+    if (!promoCode.trim() || !profileId) return;
 
     try {
+      // 1. Check if user already has a referrer
+      const { data: myProfile } = await supabase.from('profiles').select('referred_by').eq('id', profileId).single();
+      if (myProfile?.referred_by) {
+        setPromoError('Você já utilizou um código de indicação anteriormente.');
+        return;
+      }
+
+      // 2. Validate code
       const { data: referrer, error } = await supabase
         .from('profiles')
         .select('id, username')
         .eq('referral_code', promoCode.trim().toUpperCase())
-        .single();
+        .maybeSingle();
 
       if (error || !referrer) {
         setPromoError('Código inválido ou inexistente.');
@@ -137,7 +154,7 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
       setIsPromoApplied(true);
       setReferrerId(referrer.id);
       setReferrerName(referrer.username || 'Amigo');
-      useNotificationStore.getState().show(`Código de @${referrer.username} aplicado! +10% de BCOINS em qualquer pacote.`, 'success');
+      useNotificationStore.getState().show(`Código de @${referrer.username} aplicado! Válido para sua 1ª compra.`, 'success');
     } catch (err) {
       setPromoError('Erro ao validar código.');
     }
@@ -298,7 +315,7 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
               </button>
             </div>
             {promoError && <p className="text-red-500 text-[10px] font-bold uppercase">{promoError}</p>}
-            {isPromoApplied && <p className="text-green-500 text-[10px] font-bold uppercase">Código de @{referrerName} Ativo! +10% BCOINS 🔥</p>}
+            {isPromoApplied && <p className="text-green-500 text-[10px] font-bold uppercase">Código de @{referrerName} Ativo! -10% DESCONTO 🔥</p>}
           </div>
 
           <button
@@ -310,6 +327,47 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
           </button>
         </section>
       </main>
+
+      {/* Thank You Modal */}
+      {showThankYou && (
+        <div className="fixed inset-0 z-[300] bg-background-dark/95 backdrop-blur-xl flex items-center justify-center p-6 animate-in fade-in duration-500">
+          <div className="w-full max-w-[380px] bg-surface-dark border border-white/10 rounded-[3rem] p-10 text-center relative overflow-hidden shadow-2xl">
+            {/* Success Glow */}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-48 bg-primary/20 blur-[80px] -mt-24"></div>
+
+            <div className="relative z-10">
+              <div className="size-24 bg-primary rounded-full flex items-center justify-center mx-auto mb-8 shadow-lg shadow-primary/20 animate-bounce">
+                <span className="material-symbols-outlined text-black text-5xl font-black">check</span>
+              </div>
+
+              <h2 className="text-3xl font-black text-white italic tracking-tighter mb-2 uppercase">SUCESSO!</h2>
+              <p className="text-white/40 text-sm mb-10 font-medium">Sua compra foi processada com sucesso. Divirta-se nas mesas!</p>
+
+              <div className="bg-white/5 rounded-3xl p-6 mb-10 space-y-4 border border-white/5">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-white/20 font-black uppercase tracking-widest">Adicionado</span>
+                  <span className="text-primary font-black">+{lastPurchase?.coins} BCOINS</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-white/20 font-black uppercase tracking-widest">Valor</span>
+                  <span className="text-white font-black">R$ {lastPurchase?.total.toFixed(2).replace('.', ',')}</span>
+                </div>
+                <div className="flex justify-between items-center text-[10px]">
+                  <span className="text-white/10 font-bold uppercase">Pagamento</span>
+                  <span className="text-white/40 font-bold">{lastPurchase?.method}</span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => { setShowThankYou(false); onBack(); }}
+                className="w-full h-16 bg-white/10 hover:bg-white/20 text-white font-black rounded-2xl transition-all active:scale-95 uppercase tracking-widest text-xs"
+              >
+                Voltar ao Início
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

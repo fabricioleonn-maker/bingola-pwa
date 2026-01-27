@@ -22,6 +22,7 @@ export const ChatScreen: React.FC<Props> = ({ onBack }) => {
 
   const [activeTab, setActiveTab] = useState<'table' | 'private'>('table');
   const [selectedFriendId, setSelectedFriendId] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<any[]>([]);
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -32,19 +33,30 @@ export const ChatScreen: React.FC<Props> = ({ onBack }) => {
     });
   }, []);
 
+  const fetchConversations = useChatStore(s => s.fetchConversations);
   const subscribeDMs = useChatStore(s => s.subscribeToDirectMessages);
   const fetchDMs = useChatStore(s => s.fetchDirectMessages);
   const friends = useFriendshipStore(s => s.friends);
 
   useEffect(() => {
-    // Subscribe to DMs for ALL current friends to ensure we receive messages in the "Private Chat" tab
-    const unsubscribes = friends.map(f => subscribeDMs(f.friend_id));
+    // 1. Fetch all historical conversations
+    fetchConversations().then(data => {
+      setConversations(data);
+      // 2. Subscribe and fetch messages for EACH partner
+      data.forEach(p => {
+        fetchDMs(p.id);
+        subscribeDMs(p.id);
+      });
+    });
 
-    // Also fetch existing ones
-    friends.forEach(f => fetchDMs(f.friend_id));
+    // Also keep friends for context if needed, but primary list is conversations
+  }, [fetchConversations, fetchDMs, subscribeDMs]);
 
-    return () => unsubscribes.forEach(unsub => unsub());
-  }, [friends, subscribeDMs, fetchDMs]);
+  useEffect(() => {
+    if (activeTab === 'private') {
+      fetchConversations().then(setConversations);
+    }
+  }, [activeTab, fetchConversations]);
 
   useEffect(() => {
     if (roomId) {
@@ -109,8 +121,8 @@ export const ChatScreen: React.FC<Props> = ({ onBack }) => {
             onClick={() => setActiveTab('private')}
             className={`flex-1 py-8 rounded-3xl flex flex-col items-center justify-center gap-1 border transition-all ${activeTab === 'private' ? 'bg-primary border-primary shadow-lg shadow-primary/20' : 'bg-white/5 border-white/10 opacity-40'}`}
           >
-            <span className="text-[10px] font-bold uppercase tracking-widest leading-none">Social</span>
-            <p className="text-lg font-bold italic uppercase">Conversas</p>
+            <span className="text-[10px] font-bold uppercase tracking-widest leading-none">Conversas</span>
+            <p className="text-lg font-bold italic uppercase">Privadas</p>
           </button>
         </div>
       </header>
@@ -149,27 +161,27 @@ export const ChatScreen: React.FC<Props> = ({ onBack }) => {
           <div className="w-full">
             {!selectedFriendId ? (
               <div className="space-y-2">
-                <p className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em] mb-4 ml-1">Seus Amigos</p>
-                {friends.length === 0 ? (
+                <p className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em] mb-4 ml-1">Conversas Recentes</p>
+                {conversations.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-48 opacity-20">
-                    <span className="material-symbols-outlined text-4xl mb-2">person_off</span>
-                    <p className="text-[10px] font-bold uppercase tracking-[0.2em]">Sem amigos online...</p>
+                    <span className="material-symbols-outlined text-4xl mb-2">forum</span>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.2em]">Nenhuma conversa...</p>
                   </div>
                 ) : (
-                  friends.map(f => {
-                    const friendMessages = directMessages[f.friend_id] || [];
+                  conversations.map(p => {
+                    const friendMessages = directMessages[p.id] || [];
                     const lastMsg = friendMessages[friendMessages.length - 1];
                     return (
                       <button
-                        key={f.id}
-                        onClick={() => setSelectedFriendId(f.friend_id)}
+                        key={p.id}
+                        onClick={() => setSelectedFriendId(p.id)}
                         className="w-full bg-white/5 border border-white/5 p-4 rounded-2xl flex items-center gap-4 active:bg-white/10 transition-all text-left"
                       >
-                        <img src={f.friend_profiles?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100'} className="size-12 rounded-full border border-white/10" />
+                        <img src={p.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100'} className="size-12 rounded-full border border-white/10" />
                         <div className="flex-1 min-w-0">
-                          <p className="text-white font-bold truncate tracking-tight">{f.friend_profiles?.username}</p>
+                          <p className="text-white font-bold truncate tracking-tight">{p.username}</p>
                           <p className="text-white/40 text-xs truncate">
-                            {lastMsg ? lastMsg.content : 'Inicie uma conversa...'}
+                            {lastMsg ? lastMsg.content : 'Clique para ver as mensagens'}
                           </p>
                         </div>
                         <span className="material-symbols-outlined text-white/20 text-sm">chevron_right</span>
@@ -184,8 +196,8 @@ export const ChatScreen: React.FC<Props> = ({ onBack }) => {
                   <button onClick={() => setSelectedFriendId(null)} className="size-8 flex items-center justify-center bg-white/10 rounded-full text-white/60">
                     <span className="material-symbols-outlined text-sm">arrow_back</span>
                   </button>
-                  <img src={friends.find(f => f.friend_id === selectedFriendId)?.friend_profiles?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100'} className="size-8 rounded-full" />
-                  <p className="font-bold text-sm">{friends.find(f => f.friend_id === selectedFriendId)?.friend_profiles?.username}</p>
+                  <img src={conversations.find(p => p.id === selectedFriendId)?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100'} className="size-8 rounded-full" />
+                  <p className="font-bold text-sm">{conversations.find(p => p.id === selectedFriendId)?.username}</p>
                 </div>
 
                 {(directMessages[selectedFriendId] || []).length === 0 ? (

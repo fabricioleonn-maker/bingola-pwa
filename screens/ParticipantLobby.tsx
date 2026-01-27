@@ -21,6 +21,7 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
   const acceptedList = useRoomStore(s => s.accepted);
   const myStatus = useRoomStore(s => s.myStatus);
   const refreshParticipants = useRoomStore(s => s.refreshParticipants);
+  const subscribe = useRoomStore(s => s.subscribe);
   const sendFriendRequest = useFriendshipStore(s => s.sendRequest);
   const initiatePrivateChat = useChatStore(s => s.fetchDirectMessages);
 
@@ -48,8 +49,15 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
       }
     };
 
+    // Subscribe to Realtime events (CRITICAL FIX)
+    const unsubscribe = subscribe(roomId);
+
     hydrateHost();
-  }, [roomId, room?.host_id, refreshParticipants]);
+
+    return () => {
+      unsubscribe();
+    };
+  }, [roomId, room?.host_id, refreshParticipants, subscribe]);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -82,13 +90,15 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
   }, [roomId, onNavigate, myStatus]);
 
   // Fallback navigation via DB poll + Closure Alert
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [showRoomClosed, setShowRoomClosed] = useState(false);
+
+  // Fallback navigation via DB poll + Closure Alert
   useEffect(() => {
     if (!roomId) return;
 
     if (room?.status === 'finished') {
-      useNotificationStore.getState().show("Esta mesa foi encerrada pelo anfitrião.", 'info');
-      useRoomStore.getState().setRoomId(null);
-      onNavigate('home');
+      setShowRoomClosed(true);
       return;
     }
 
@@ -101,7 +111,6 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
     }
   }, [room?.status, onNavigate, myStatus]);
 
-  const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [showVoiceModal, setShowVoiceModal] = useState(false);
   const { selectedVoice, setVoice, isNarrationMuted, toggleNarration } = useAudioStore();
 
@@ -434,6 +443,32 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
               className="w-full h-14 bg-white/5 text-white/40 font-black rounded-2xl uppercase tracking-widest text-[10px]"
             >
               FECHAR
+            </button>
+          </div>
+        </div>
+      )}
+      {showRoomClosed && (
+        <div className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-xl flex items-center justify-center p-8 animate-in zoom-in duration-300">
+          <div className="bg-surface-dark border border-white/10 p-10 rounded-[3rem] w-full max-w-sm text-center shadow-2xl space-y-8 relative overflow-hidden">
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-32 bg-red-600/20 blur-3xl -mt-16"></div>
+
+            <div className="size-24 bg-red-500 rounded-full flex items-center justify-center mx-auto shadow-lg shadow-red-500/20 animate-pulse">
+              <span className="material-symbols-outlined text-white text-5xl">cancel</span>
+            </div>
+
+            <div className="space-y-4">
+              <h2 className="text-3xl font-black italic uppercase tracking-tighter text-white">Mesa Encerrada!</h2>
+              <p className="text-white/40 text-sm leading-relaxed">O anfitrião encerrou esta sessão. Você será redirecionado para a tela inicial.</p>
+            </div>
+
+            <button
+              onClick={() => {
+                useRoomStore.getState().setRoomId(null);
+                onNavigate('home');
+              }}
+              className="w-full h-16 bg-white text-black rounded-2xl font-black text-sm uppercase tracking-widest active:scale-95 transition-all shadow-[0_0_40px_rgba(255,255,255,0.1)]"
+            >
+              Voltar ao Início
             </button>
           </div>
         </div>

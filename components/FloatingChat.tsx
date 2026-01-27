@@ -125,20 +125,33 @@ export const FloatingChat: React.FC<Props> = ({ bottomOffset = '0px' }) => {
             {/* Handle/Header */}
             <div
                 onClick={() => setIsExpanded(!isExpanded)}
-                className="w-full h-12 flex-none flex items-center justify-between px-6 cursor-pointer group"
+                className="w-full h-12 flex-none flex items-center justify-between px-6 cursor-pointer group relative overflow-hidden"
             >
-                <div className="flex items-center gap-3">
-                    <span className={`material-symbols-outlined text-primary ${unreadCount > 0 ? 'animate-bounce' : ''}`}>
-                        {unreadCount > 0 ? 'mark_chat_unread' : 'chat'}
-                    </span>
+                {/* Glow effect on hover */}
+                <div className="absolute inset-0 bg-primary/0 group-hover:bg-primary/5 transition-colors duration-500" />
+
+                <div className="flex items-center gap-3 relative z-10">
+                    <div className="relative">
+                        <span className={`material-symbols-outlined text-primary ${unreadCount > 0 ? 'animate-bounce' : ''}`}>
+                            {unreadCount > 0 ? 'mark_chat_unread' : 'chat'}
+                        </span>
+                        {unreadCount > 0 && (
+                            <span className="absolute -top-1 -right-1 size-3 bg-red-500 rounded-full border border-background-dark animate-pulse" />
+                        )}
+                    </div>
                     <span className="text-[10px] font-black uppercase tracking-widest text-white/40">
                         Chat da Mesa {unreadCount > 0 && <span className="text-primary">({unreadCount})</span>}
                     </span>
                 </div>
-                <div className="flex-1 flex justify-center">
-                    <div className={`w-12 h-1 rounded-full bg-white/10 transition-all group-hover:bg-white/30 ${isExpanded ? 'rotate-180 mb-2' : ''}`} />
+
+                <div className="flex-1 flex justify-center relative z-10 mr-4">
+                    <div className="flex flex-col items-center gap-1">
+                        <div className={`w-8 h-1 rounded-full bg-white/20 transition-all group-hover:bg-primary/50 group-hover:w-12 ${isExpanded ? 'rotate-[10deg] translate-x-1' : ''}`} />
+                        <div className={`w-8 h-1 rounded-full bg-white/10 transition-all group-hover:bg-primary/30 group-hover:w-12 ${isExpanded ? 'rotate-[-10deg] -translate-x-1' : ''}`} />
+                    </div>
                 </div>
-                <span className="material-symbols-outlined text-white/20 text-lg transition-transform duration-500" style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+
+                <span className="material-symbols-outlined text-white/20 text-lg transition-transform duration-500 relative z-10" style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
                     keyboard_arrow_up
                 </span>
             </div>

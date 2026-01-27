@@ -9,9 +9,12 @@ interface ChatStore {
     subscribeToRoom: (roomId: string) => () => void;
     sendMessageToRoom: (roomId: string, content: string) => Promise<void>;
 
-    sendDirectMessage: (receiverId: string, content) => Promise<void>;
+    sendDirectMessage: (receiverId: string, content: string) => Promise<void>;
     fetchDirectMessages: (friendId: string) => Promise<void>;
     subscribeToDirectMessages: (friendId: string) => () => void;
+
+    // New: Fetch all unique users I've chatted with
+    fetchConversations: () => Promise<any[]>;
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
@@ -163,5 +166,29 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         return () => {
             supabase.removeChannel(channel);
         };
+    },
+
+    fetchConversations: async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return [];
+
+        // 1. Get all unique partner IDs from direct_messages
+        // We use two queries and merge since Supabase/PostgREST doesn't support UNION easily via JS
+        const { data: sent } = await supabase.from('direct_messages').select('receiver_id').eq('sender_id', user.id);
+        const { data: received } = await supabase.from('direct_messages').select('sender_id').eq('receiver_id', user.id);
+
+        const partnerIds = new Set<string>();
+        sent?.forEach(m => partnerIds.add(m.receiver_id));
+        received?.forEach(m => partnerIds.add(m.sender_id));
+
+        if (partnerIds.size === 0) return [];
+
+        // 2. Fetch profiles for all these partners
+        const { data: profiles } = await supabase
+            .from('profiles')
+            .select('id, username, avatar_url, level, bcoins')
+            .in('id', Array.from(partnerIds));
+
+        return profiles || [];
     }
 }));

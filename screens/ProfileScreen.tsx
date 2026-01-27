@@ -18,20 +18,30 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
   const [isMaster, setIsMaster] = useState(false);
   const [appSettings, setAppSettings] = useState<any>(null);
 
+  const [adminTimeLeft, setAdminTimeLeft] = useState('');
+  const [isResetting, setIsResetting] = useState(false);
+
   const fetchProfile = async () => {
     const { data: { user: authUser } } = await supabase.auth.getUser();
+
+    // Always fetch app settings for cycle display/countdown
+    try {
+      const { data: settings } = await supabase.from('app_settings').select('*').limit(1).maybeSingle();
+      if (settings) setAppSettings(settings);
+    } catch (e) {
+      console.warn("Could not fetch app settings:", e);
+    }
+
     if (authUser) {
       if (authUser.email?.toLowerCase() === 'fabricio.leonn@gmail.com') {
         setIsMaster(true);
-        const { data: settings } = await supabase.from('app_settings').select('*').eq('id', 1).single();
-        if (settings) setAppSettings(settings);
       }
 
       const { data: profile } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', authUser.id)
-        .single();
+        .maybeSingle();
 
       if (profile) {
         setUser({
@@ -46,6 +56,86 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
   useEffect(() => {
     fetchProfile();
   }, []);
+
+  useEffect(() => {
+    const calculateTimeLeft = () => {
+      if (!appSettings || appSettings.bpoints_reset_mode === 'manual' || !isMaster) {
+        setAdminTimeLeft('');
+        return;
+      }
+
+      const now = new Date();
+      // SP Timezone (UTC-3)
+      const spOffset = -3;
+      const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+      const spNow = new Date(utc + (3600000 * spOffset));
+
+      let targetDate = new Date(spNow);
+
+      if (appSettings.bpoints_reset_mode === 'teste') {
+        const lastReset = appSettings.last_bpoints_reset ? new Date(appSettings.last_bpoints_reset) : new Date();
+        targetDate = new Date(lastReset.getTime() + 15000);
+      } else if (appSettings.bpoints_reset_mode === 'daily') {
+        targetDate.setHours(24, 0, 0, 0);
+      } else if (appSettings.bpoints_reset_mode === 'weekly') {
+        const day = spNow.getDay();
+        const diff = day === 0 ? 1 : (8 - day);
+        targetDate.setDate(spNow.getDate() + diff);
+        targetDate.setHours(0, 0, 0, 0);
+      } else if (appSettings.bpoints_reset_mode === 'biweekly') {
+        const dayOfMonth = spNow.getDate();
+        if (dayOfMonth < 16) {
+          targetDate.setDate(16);
+          targetDate.setHours(0, 0, 0, 0);
+        } else {
+          targetDate.setMonth(spNow.getMonth() + 1);
+          targetDate.setDate(1);
+          targetDate.setHours(0, 0, 0, 0);
+        }
+      } else if (appSettings.bpoints_reset_mode === 'monthly') {
+        targetDate = new Date(spNow.getFullYear(), spNow.getMonth() + 1, 1, 0, 0, 0);
+      } else {
+        setAdminTimeLeft('');
+        return;
+      }
+
+      const msLeft = targetDate.getTime() - spNow.getTime();
+      if (msLeft < 0) {
+        setAdminTimeLeft('Resetando...');
+        // TRIGGER AUTO RESET (First client to hit this window calls RPC)
+        if (appSettings.bpoints_reset_mode !== 'manual' && !isResetting) {
+          setIsResetting(true);
+          console.log("[Admin] Auto-triggering global reset...");
+          supabase.rpc('reset_all_bpoints').then(({ error }) => {
+            if (!error) {
+              console.log("[Admin] Global reset successful.");
+              fetchProfile();
+              setTimeout(() => setIsResetting(false), 2000);
+            } else {
+              console.error("[Admin] Auto-reset failed:", error);
+              setIsResetting(false);
+            }
+          });
+        }
+        return;
+      }
+
+      const d = Math.floor(msLeft / (1000 * 60 * 60 * 24));
+      const h = Math.floor((msLeft / (1000 * 60 * 60)) % 24);
+      const m = Math.floor((msLeft / (1000 * 60)) % 60);
+      const s = Math.floor((msLeft / 1000) % 60);
+
+      if (d > 0) {
+        setAdminTimeLeft(`${d}d ${h}h ${m}m`);
+      } else {
+        setAdminTimeLeft(`${h}h ${m}m ${s}s`);
+      }
+    };
+
+    const timer = setInterval(calculateTimeLeft, 1000);
+    calculateTimeLeft();
+    return () => clearInterval(timer);
+  }, [appSettings, isMaster]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -128,7 +218,7 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
   };
 
   const addTestCoins = async () => {
-    if (isUpdating || !user) return;
+    if (isUpdating || !user || !isMaster) return;
     setIsUpdating(true);
 
     const newBalance = (user.bcoins || 0) + 100;
@@ -139,6 +229,7 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
 
     if (!error) {
       setUser({ ...user, bcoins: newBalance });
+      useNotificationStore.getState().show('BCOINS de teste adicionados!', 'success');
     }
 
     setTimeout(() => setIsUpdating(false), 1000);
@@ -147,24 +238,34 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
   const handleManualReset = async () => {
     if (!isMaster) return;
     useNotificationStore.getState().confirm({
-      title: "Zerar Todos os BPoints?",
-      message: "Tem certeza? Isso resetará a pontuação de TODOS os jogadores do Ranking para zero.",
+      title: "Zerar todos os BPoints?",
+      message: "Tem certeza? Isso resetará a pontuação de TODOS os jogadores para zero. ESSA AÇÃO REQUER A FUNÇÃO RPC 'reset_all_bpoints' NO SUPABASE.",
       onConfirm: async () => {
         setIsUpdating(true);
-        const { error } = await supabase.from('profiles').update({ bpoints: 0 }).neq('id', '00000000-0000-0000-0000-000000000000'); // Dummy condition to update all
-        if (!error) {
-          await supabase.from('app_settings').update({ last_bpoints_reset: new Date().toISOString() }).eq('id', 1);
-          useNotificationStore.getState().show("Todos os BPoints foram resetados!", 'success');
-          fetchProfile();
+        try {
+          // Use RPC for global reset to bypass RLS
+          const { error } = await supabase.rpc('reset_all_bpoints');
+
+          if (!error) {
+            useNotificationStore.getState().show("Todos os BPoints foram resetados!", 'success');
+            fetchProfile();
+          } else {
+            console.error("RPC Error:", error);
+            useNotificationStore.getState().show("Falha no Reset Global. Verifique se a função RPC V3 foi criada no Supabase.", 'error');
+          }
+        } catch (err) {
+          console.error("Reset exception:", err);
+          useNotificationStore.getState().show("Erro inesperado ao resetar.", 'error');
+        } finally {
+          setIsUpdating(false);
         }
-        setIsUpdating(false);
       }
     });
   };
 
   const handleUpdateResetMode = async (mode: string) => {
-    if (!isMaster) return;
-    const { error } = await supabase.from('app_settings').update({ bpoints_reset_mode: mode }).eq('id', 1);
+    if (!isMaster || !appSettings?.id) return;
+    const { error } = await supabase.from('app_settings').update({ bpoints_reset_mode: mode }).eq('id', appSettings.id);
     if (!error) {
       setAppSettings({ ...appSettings, bpoints_reset_mode: mode });
       useNotificationStore.getState().show(`Ciclo de reset alterado para: ${mode}`, 'success');
@@ -298,7 +399,7 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
             </button>
           </div>
           <p className="text-[10px] text-white/40 leading-relaxed">
-            Convide amigos e ganhe 50 BCOINS quando eles usarem seu código na primeira compra!
+            Convide amigos e ganhe 10 BCOINS quando eles usarem seu código na primeira compra! Eles ganham 10% de desconto!
           </p>
         </div>
 
@@ -347,18 +448,27 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
 
               <div className="bg-primary/5 border border-primary/20 rounded-[2.5rem] p-6 space-y-6">
                 <div>
-                  <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-4">Ciclo de Reset de BPoints</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {['manual', 'daily', 'weekly', 'biweekly', 'monthly'].map(mode => (
+                  <div className="flex items-center justify-between mb-4">
+                    <p className="text-[10px] font-black text-white/40 uppercase tracking-widest">Ciclo de Reset de BPoints</p>
+                    {adminTimeLeft && (
+                      <div className="flex items-center gap-1.5 px-2 py-1 bg-primary/10 rounded-lg">
+                        <span className="material-symbols-outlined text-[10px] text-primary animate-pulse">timer</span>
+                        <p className="text-[9px] font-black text-primary tracking-widest">{adminTimeLeft}</p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {['manual', 'teste', 'daily', 'weekly', 'biweekly', 'monthly'].map(mode => (
                       <button
                         key={mode}
                         onClick={() => handleUpdateResetMode(mode)}
                         className={`py-2 px-3 rounded-xl text-[9px] font-black uppercase border transition-all ${appSettings?.bpoints_reset_mode === mode ? 'bg-primary border-primary text-black' : 'bg-white/5 border-white/10 text-white/40'}`}
                       >
                         {mode === 'manual' ? 'Desativado' :
-                          mode === 'daily' ? 'Diário' :
-                            mode === 'weekly' ? 'Semanal' :
-                              mode === 'biweekly' ? 'Quinzenal' : 'Mensal'}
+                          mode === 'teste' ? 'Teste (15s)' :
+                            mode === 'daily' ? 'Diário' :
+                              mode === 'weekly' ? 'Semanal' :
+                                mode === 'biweekly' ? 'Quinzenal' : 'Mensal'}
                       </button>
                     ))}
                   </div>
@@ -368,10 +478,10 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
                   <button
                     onClick={handleManualReset}
                     disabled={isUpdating}
-                    className="w-full h-14 bg-red-500 text-white font-black rounded-2xl flex items-center justify-center gap-3 shadow-lg shadow-red-500/20 active:scale-95 transition-all"
+                    className="w-full h-14 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-500 font-black rounded-2xl flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all"
                   >
-                    <span className="material-symbols-outlined">restart_alt</span>
-                    ZERAR TODOS OS BPOINTS AGORA
+                    <span className="material-symbols-outlined text-xl">restart_alt</span>
+                    <span className="uppercase tracking-widest text-[10px]">{isUpdating ? 'PROCESSANDO...' : 'Zerar BPoints Global'}</span>
                   </button>
                   {appSettings?.last_bpoints_reset && (
                     <p className="text-center text-[8px] text-white/20 font-bold mt-2 uppercase">
@@ -385,22 +495,24 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
 
           <h3 className="text-[10px] font-black uppercase tracking-widest text-white/30 px-1 pt-4">Ações Rápidas</h3>
 
-          <button
-            onClick={addTestCoins}
-            disabled={isUpdating}
-            className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-between active:scale-95 transition-all"
-          >
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center">
-                <span className="material-symbols-outlined text-primary">{isUpdating ? 'sync' : 'add_card'}</span>
+          {isMaster && (
+            <button
+              onClick={addTestCoins}
+              disabled={isUpdating}
+              className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-between active:scale-95 transition-all"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-primary">{isUpdating ? 'sync' : 'add_card'}</span>
+                </div>
+                <div className="text-left">
+                  <p className="font-bold text-sm">Recarga de Teste (Admin)</p>
+                  <p className="text-[10px] text-white/40">Adicionar +100 BCOINS instantaneamente</p>
+                </div>
               </div>
-              <div className="text-left">
-                <p className="font-bold text-sm">Recarga de Teste</p>
-                <p className="text-[10px] text-white/40">Adicionar +100 BCOINS instantaneamente</p>
-              </div>
-            </div>
-            <span className="material-symbols-outlined text-white/20">chevron_right</span>
-          </button>
+              <span className="material-symbols-outlined text-white/20">chevron_right</span>
+            </button>
+          )}
         </div>
       </main>
 
