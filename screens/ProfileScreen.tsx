@@ -352,14 +352,19 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
     }
   };
 
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    useNotificationStore.getState().show(`${label} copiado!`, 'success');
+  };
+
   const shareReferral = () => {
     if (!user?.referral_code) return;
-    const text = `Vem jogar Bingola comigo! Use meu código de indicação: ${user.referral_code} na loja para ganhar bônus! 🎱✨`;
+    const text = `Vem jogar Bingola comigo! 🎱\nUse meu código de indicação: ${user.referral_code}\n\nGanhe bônus na sua primeira compra! 🎁✨`;
+
     if (navigator.share) {
       navigator.share({ title: 'Bingola', text, url: window.location.origin });
     } else {
-      navigator.clipboard.writeText(user.referral_code);
-      useNotificationStore.getState().show("Código copiado!", 'success');
+      copyToClipboard(user.referral_code, "Código");
     }
   };
 
@@ -471,12 +476,22 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
               <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em] mb-1">Seu Código de Indicação</p>
               <h3 className="text-3xl font-black text-white italic tracking-tighter uppercase">{user?.referral_code || '------'}</h3>
             </div>
-            <button
-              onClick={shareReferral}
-              className="size-14 bg-primary text-black rounded-2xl flex items-center justify-center shadow-lg active:scale-95 transition-all"
-            >
-              <span className="material-symbols-outlined font-black">share</span>
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => copyToClipboard(user?.referral_code || '', "Código")}
+                className="size-14 bg-white/10 text-white rounded-2xl flex items-center justify-center hover:bg-white/20 active:scale-95 transition-all"
+                title="Copiar Código"
+              >
+                <span className="material-symbols-outlined font-black">content_copy</span>
+              </button>
+              <button
+                onClick={shareReferral}
+                className="size-14 bg-primary text-black rounded-2xl flex items-center justify-center shadow-lg active:scale-95 transition-all"
+                title="Compartilhar"
+              >
+                <span className="material-symbols-outlined font-black">share</span>
+              </button>
+            </div>
           </div>
           <p className="text-[10px] text-white/40 leading-relaxed">
             Convide amigos e ganhe 10 BCOINS quando eles usarem seu código na primeira compra! Eles ganham 10% de desconto!
@@ -631,6 +646,14 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
                       </div>
                     </div>
                   )}
+
+                  <button
+                    onClick={() => onNavigate('store_admin')}
+                    className="w-full h-12 bg-primary/10 border border-primary/20 text-primary font-black rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all text-[10px] uppercase tracking-widest mt-2"
+                  >
+                    <span className="material-symbols-outlined text-lg">storefront</span>
+                    Gerenciador da Loja
+                  </button>
 
                   <button
                     onClick={() => { setShowExtrato(true); fetchTransactions(); }}

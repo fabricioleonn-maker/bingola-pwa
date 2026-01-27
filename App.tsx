@@ -10,6 +10,7 @@ import { ParticipantLobby } from './screens/ParticipantLobby';
 import { GameScreen } from './screens/GameScreen';
 import { HostDashboard } from './screens/HostDashboard';
 import { StoreScreen } from './screens/StoreScreen';
+import { StoreAdminScreen } from './screens/StoreAdminScreen';
 import { RankingScreen } from './screens/RankingScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
 import { WinnersScreen } from './screens/WinnersScreen';
@@ -47,12 +48,23 @@ const App: React.FC = () => {
   // Used to ensure only the latest watchdog run takes effect
   const runTokenRef = useRef(0);
 
-  const [lastInteraction, setLastInteraction] = useState(Date.now());
+  const [lastInteraction, setLastInteraction] = useState(() => {
+    const saved = localStorage.getItem('bingola_last_activity');
+    return saved ? parseInt(saved) : Date.now();
+  });
+
   const [isSessionClaimed, setIsSessionClaimed] = useState(false);
 
-  // Track global activity for 3-minute inactivity logout
+  // Update persistent activity timestamp
+  const updateActivity = () => {
+    const now = Date.now();
+    setLastInteraction(now);
+    localStorage.setItem('bingola_last_activity', now.toString());
+  };
+
+  // Track global activity
   useEffect(() => {
-    const handleActivity = () => setLastInteraction(Date.now());
+    const handleActivity = () => updateActivity();
     window.addEventListener('mousedown', handleActivity);
     window.addEventListener('keydown', handleActivity);
     window.addEventListener('touchstart', handleActivity);
@@ -64,6 +76,31 @@ const App: React.FC = () => {
       window.removeEventListener('scroll', handleActivity);
     };
   }, []);
+
+  // Global Auto-Logout Timer (10 Minutes)
+  useEffect(() => {
+    if (!session?.user) return;
+
+    const checkTimeout = async () => {
+      const inactiveMs = Date.now() - lastInteraction;
+      // 10 minutes = 600,000 ms
+      if (inactiveMs > 600000) {
+        console.log("[Inactivity] 10 minute timeout reached. Forcing logoff.");
+        showNotify("Sessão expirada por inatividade (10 min).", 'info');
+        if (roomId && session?.user?.id) {
+          await useRoomStore.getState().hardExit(roomId, session.user.id);
+        }
+        await supabase.auth.signOut();
+      }
+    };
+
+    // Check every 30 seconds
+    const interval = setInterval(checkTimeout, 30000);
+    // Also check immediately on mount/session load
+    checkTimeout();
+
+    return () => clearInterval(interval);
+  }, [session?.user?.id, lastInteraction, roomId]);
 
   // Single source of truth for realtime session
   useRoomSession(roomId);
@@ -264,17 +301,7 @@ const App: React.FC = () => {
       await new Promise(r => setTimeout(r, 500));
       if (cancelled || myToken !== runTokenRef.current) return;
 
-      // 1. Inactivity Check (15 minutes)
-      const inactiveMs = Date.now() - lastInteraction;
-      if (inactiveMs > 900000) {
-        console.log("[Watchdog] Inactivity timeoutReached. Logging out.");
-        showNotify("Sessão encerrada por inatividade (15 min).", 'info');
-        if (roomId && session?.user?.id) {
-          await useRoomStore.getState().hardExit(roomId, session.user.id);
-        }
-        await supabase.auth.signOut();
-        return;
-      }
+      // Inactivity check moved to main useEffect for better reliability
 
       // 2. Session Conflict Check
       if (isSessionClaimed) {
@@ -444,6 +471,7 @@ const App: React.FC = () => {
       );
       case 'host_dashboard': return <HostDashboard onBack={() => setCurrentScreen('home')} onPublish={() => setCurrentScreen('lobby')} onNavigate={setCurrentScreen} />;
       case 'store': return <StoreScreen onBack={() => setCurrentScreen('home')} />;
+      case 'store_admin': return <StoreAdminScreen onBack={() => setCurrentScreen('profile')} />;
       case 'ranking': return <RankingScreen onBack={() => setCurrentScreen('home')} />;
       case 'profile': return <ProfileScreen onBack={() => setCurrentScreen('home')} onNavigate={(s) => s === 'customization' ? navigateToCustom('profile') : setCurrentScreen(s)} />;
       case 'winners': return <WinnersScreen onBack={() => setCurrentScreen('home')} />;

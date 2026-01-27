@@ -11,18 +11,20 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
   const [balance, setBalance] = useState(0);
   const [profileId, setProfileId] = useState<string | null>(null);
   const [promoCode, setPromoCode] = useState('');
-  const [isPromoApplied, setIsPromoApplied] = useState(false);
+  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string, discount: number } | null>(null);
   const [promoError, setPromoError] = useState('');
   const [referrerId, setReferrerId] = useState<string | null>(null);
   const [referrerName, setReferrerName] = useState('');
+  const [packages, setPackages] = useState<any[]>([]);
   const [cart, setCart] = useState<{ id: string, coins: number, price: number, title: string }[]>([]);
   const [isFinishing, setIsFinishing] = useState(false);
 
   const [showThankYou, setShowThankYou] = useState(false);
   const [lastPurchase, setLastPurchase] = useState<any>(null);
+  const [globalPromo, setGlobalPromo] = useState<{ active: boolean, label: string, discount: number } | null>(null);
 
   useEffect(() => {
-    const fetchBalanceAndProfile = async () => {
+    const fetchData = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setProfileId(user.id);
@@ -33,15 +35,43 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
           .maybeSingle();
         if (profile) setBalance(profile.bcoins || 0);
       }
+
+      // Fetch dynamic products
+      const { data: dbProducts } = await supabase
+        .from('store_products')
+        .select('*')
+        .eq('is_active', true)
+        .order('display_order', { ascending: true });
+
+      if (dbProducts) setPackages(dbProducts);
+
+      // Fetch Global Promo Settings
+      const { data: settings } = await supabase.from('app_settings').select('*').eq('id', 1).single();
+      if (settings && settings.store_promo_active) {
+        setGlobalPromo({
+          active: settings.store_promo_active,
+          label: settings.store_promo_label,
+          discount: settings.store_promo_discount
+        });
+      }
     };
-    fetchBalanceAndProfile();
+    fetchData();
   }, []);
 
+  const getPackagePrice = (pkg: any) => {
+    const basePrice = pkg.promo_price || pkg.price;
+    if (globalPromo?.active) {
+      return basePrice * (1 - globalPromo.discount / 100);
+    }
+    return basePrice;
+  };
+
   const addToCart = (pkg: any) => {
+    const finalPrice = getPackagePrice(pkg);
     const newItem = {
       id: Math.random().toString(36).substr(2, 9),
       coins: pkg.coins,
-      price: parseFloat(pkg.price.replace(',', '.')),
+      price: finalPrice,
       title: pkg.title
     };
     setCart([...cart, newItem]);
@@ -55,7 +85,8 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
   const getGrossTotal = () => cart.reduce((acc, item) => acc + item.price, 0);
   const getNetTotal = () => {
     const gross = getGrossTotal();
-    return isPromoApplied ? gross * 0.9 : gross;
+    const discount = appliedCoupon ? (appliedCoupon.discount / 100) : 0;
+    return gross * (1 - discount);
   };
 
   const getTotalCoins = () => {
@@ -83,17 +114,18 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
     }
 
     try {
-      console.log("[Store] Finalizing purchase. Referrer ID:", referrerId);
-      // Use RPC for atomic update and referral reward (bypasses RLS issues)
-      const { error: rpcError } = await supabase.rpc('process_bcoins_purchase', {
+      console.log("[Store] Finalizing purchase. Referrer ID:", referrerId, "Coupon:", appliedCoupon?.code);
+      // Use new secure RPC for atomic update and coupon/referral processing
+      const { error: rpcError } = await supabase.rpc('finalize_store_purchase', {
         p_buyer_id: profileId,
         p_coins_added: addedCoins,
-        p_referrer_id: referrerId
+        p_referrer_id: referrerId,
+        p_coupon_code: referrerId ? null : appliedCoupon?.code
       });
 
       if (rpcError) {
         console.error("RPC Error:", rpcError);
-        // Fallback (only buyer update, referrer might fail)
+        // Fallback for buyer balance only
         const { error: fallbackError } = await supabase
           .from('profiles')
           .update({ bcoins: balance + addedCoins, referred_by: referrerId || undefined })
@@ -110,7 +142,7 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
       });
 
       setBalance(balance + addedCoins);
-      setIsPromoApplied(false);
+      setAppliedCoupon(null);
       setPromoCode('');
       setReferrerId(null);
       setCart([]);
@@ -125,24 +157,50 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
   const applyPromoCode = async () => {
     setPromoError('');
     if (!promoCode.trim() || !profileId) return;
+    const code = promoCode.trim().toUpperCase();
 
     try {
-      // 1. Check if user already has a referrer
-      const { data: myProfile } = await supabase.from('profiles').select('referred_by').eq('id', profileId).single();
-      if (myProfile?.referred_by) {
-        setPromoError('Você já utilizou um código de indicação anteriormente.');
+      // 1. Check Store Coupons Table
+      const { data: coupon } = await supabase
+        .from('store_coupons')
+        .select('*')
+        .eq('code', code)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (coupon) {
+        // Check expiration
+        if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) {
+          setPromoError('Este cupom expirou.');
+          return;
+        }
+        // Check usage limit
+        if (coupon.max_uses && coupon.current_uses >= coupon.max_uses) {
+          setPromoError('Este cupom atingiu o limite de usos.');
+          return;
+        }
+
+        setAppliedCoupon({ code: coupon.code, discount: coupon.discount_percent });
+        useNotificationStore.getState().show(`Cupom ${coupon.code} aplicado: ${coupon.discount_percent}% de desconto!`, 'success');
         return;
       }
 
-      // 2. Validate code
-      const { data: referrer, error } = await supabase
+      // 2. Check if code exists as a Referral Code
+      const { data: referrer } = await supabase
         .from('profiles')
         .select('id, username')
-        .eq('referral_code', promoCode.trim().toUpperCase())
+        .eq('referral_code', code)
         .maybeSingle();
 
-      if (error || !referrer) {
+      if (!referrer) {
         setPromoError('Código inválido ou inexistente.');
+        return;
+      }
+
+      // 3. It's a valid referral code, now check if user can use it (1st purchase only)
+      const { data: myProfile } = await supabase.from('profiles').select('referred_by').eq('id', profileId).single();
+      if (myProfile?.referred_by) {
+        setPromoError('Você já utilizou um código de indicação anteriormente.');
         return;
       }
 
@@ -151,7 +209,7 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
         return;
       }
 
-      setIsPromoApplied(true);
+      setAppliedCoupon({ code: code, discount: 10 }); // Referral is always 10%
       setReferrerId(referrer.id);
       setReferrerName(referrer.username || 'Amigo');
       useNotificationStore.getState().show(`Código de @${referrer.username} aplicado! Válido para sua 1ª compra.`, 'success');
@@ -160,11 +218,7 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
     }
   };
 
-  const packages = [
-    { coins: 10, title: 'Pacote Iniciante', price: '4,90', oldPrice: '5,45', disc: '10% OFF', icon: 'circle_notifications' },
-    { coins: 50, title: 'Pacote Família', price: '19,90', oldPrice: '24,90', disc: '20% OFF', icon: 'stack', popular: true, bonus: '+5 GRÁTIS' },
-    { coins: 200, title: 'Baú da Sorte', price: '69,99', oldPrice: '99,99', disc: '30% OFF', icon: 'featured_seasonal_and_gifts', mega: true, bonus: '+30 BÔNUS' }
-  ];
+  // REMOVED static packages array
 
   return (
     <div className="flex flex-col min-h-screen bg-background-dark">
@@ -198,7 +252,11 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
         <section>
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-xl font-black">Escolha um Pacote</h3>
-            <div className="bg-red-600 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider">Promoção</div>
+            {globalPromo?.active && (
+              <div className="bg-primary px-3 py-1 rounded-full text-[9px] font-black uppercase text-black animate-pulse">
+                {globalPromo.label} -{globalPromo.discount}% OFF
+              </div>
+            )}
           </div>
 
           <div className="space-y-6">
@@ -216,14 +274,21 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
                   </div>
                   <div className="flex-1">
                     <p className="text-lg font-black">{pkg.coins} BCOINS</p>
-                    <p className="text-xs text-white/40 mb-3">{pkg.title}</p>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-xs text-white/20 line-through">R$ {pkg.oldPrice}</span>
-                      <span className="text-2xl font-black text-primary">R$ {pkg.price}</span>
+                    <p className="text-[10px] font-black uppercase text-white/60">{pkg.title}</p>
+                    {pkg.description && <p className="text-[9px] font-bold text-white/30 lowercase mt-0.5">{pkg.description}</p>}
+                    <div className="flex items-baseline gap-2 mt-3">
+                      {(pkg.promo_price || globalPromo?.active) && (
+                        <span className="text-xs text-white/20 line-through">
+                          R$ {(pkg.promo_price ? pkg.price : pkg.price).toFixed(2).replace('.', ',')}
+                        </span>
+                      )}
+                      <span className="text-2xl font-black text-primary">
+                        R$ {getPackagePrice(pkg).toFixed(2).replace('.', ',')}
+                      </span>
                     </div>
                   </div>
                   <div className="flex flex-col gap-2">
-                    <div className="bg-red-600 text-[9px] font-black text-white px-2 py-0.5 rounded-full text-center">{pkg.disc}</div>
+                    {pkg.promo_price && <div className="bg-red-600 text-[9px] font-black text-white px-2 py-0.5 rounded-full text-center">PROMO</div>}
                     <button
                       onClick={() => addToCart(pkg)}
                       className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-black active:scale-95 transition-transform"
@@ -274,10 +339,10 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
               <span className="text-lg font-black">+{getTotalCoins()}</span>
             </div>
 
-            {isPromoApplied && (
+            {appliedCoupon && (
               <div className="flex justify-between items-center text-primary">
-                <span className="text-xs font-bold uppercase tracking-widest">Desconto Cupom (10%)</span>
-                <span className="text-sm font-black">- R$ {(getGrossTotal() * 0.1).toFixed(2).replace('.', ',')}</span>
+                <span className="text-xs font-bold uppercase tracking-widest">Desconto Cupom ({appliedCoupon.discount}%)</span>
+                <span className="text-sm font-black">- R$ {(getGrossTotal() * (appliedCoupon.discount / 100)).toFixed(2).replace('.', ',')}</span>
               </div>
             )}
 
@@ -299,23 +364,28 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
                   type="text"
                   value={promoCode}
                   onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
-                  disabled={isPromoApplied}
+                  disabled={!!appliedCoupon}
                   placeholder="DIGITE O CÓDIGO"
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-[11px] font-black uppercase tracking-wider focus:border-primary/50 outline-none disabled:opacity-50"
                 />
-                {isPromoApplied && (
+                {appliedCoupon && (
                   <span className="absolute right-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-green-500">check_circle</span>
                 )}
               </div>
               <button
-                onClick={isPromoApplied ? () => { setIsPromoApplied(false); setReferrerId(null); } : applyPromoCode}
-                className={`px-6 rounded-xl font-black text-[10px] uppercase transition-all ${isPromoApplied ? 'bg-white/10 text-white/40' : 'bg-primary text-black shadow-lg shadow-primary/20'}`}
+                onClick={appliedCoupon ? () => { setAppliedCoupon(null); setReferrerId(null); } : applyPromoCode}
+                className={`px-6 rounded-xl font-black text-[10px] uppercase transition-all ${appliedCoupon ? 'bg-white/10 text-white/40' : 'bg-primary text-black shadow-lg shadow-primary/20'}`}
               >
-                {isPromoApplied ? 'REMOVER' : 'APLICAR'}
+                {appliedCoupon ? 'REMOVER' : 'APLICAR'}
               </button>
             </div>
             {promoError && <p className="text-red-500 text-[10px] font-bold uppercase">{promoError}</p>}
-            {isPromoApplied && <p className="text-green-500 text-[10px] font-bold uppercase">Código de @{referrerName} Ativo! -10% DESCONTO 🔥</p>}
+            {appliedCoupon && (
+              <p className="text-green-500 text-[10px] font-bold uppercase">
+                Cupom {appliedCoupon.code} Ativo! -{appliedCoupon.discount}% DESCONTO 🔥
+                {referrerId && <span className="block text-[8px] opacity-70">Indicação de @{referrerName}</span>}
+              </p>
+            )}
           </div>
 
           {/* Information regarding future App Store integration */}

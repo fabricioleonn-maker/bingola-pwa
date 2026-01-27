@@ -31,6 +31,7 @@ export type AppScreen =
   | 'game'
   | 'host_dashboard'
   | 'store'
+  | 'store_admin'
   | 'ranking'
   | 'profile'
   | 'winners'
