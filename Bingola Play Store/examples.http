@@ -1,0 +1,44 @@
+@baseUrl = http://localhost:3000
+@userId = 7b6e9a31-4d3b-4b1a-9a3a-3a3a3a3a3a3a
+
+### Get Balance
+GET {{baseUrl}}/wallet/balance/{{userId}}
+
+### Get Ledger
+GET {{baseUrl}}/wallet/ledger/{{userId}}?limit=10
+
+### Verify Google Purchase (Mock Success in Dev)
+POST {{baseUrl}}/billing/verify
+Content-Type: application/json
+
+{
+  "platform": "android",
+  "store": "google_play",
+  "product_id": "bcoins_pack_100",
+  "token_or_tx_id": "mock_token_{{$guid}}",
+  "userId": "{{userId}}"
+}
+
+### Verify Apple Purchase (Stub)
+POST {{baseUrl}}/billing/verify
+Content-Type: application/json
+
+{
+  "platform": "ios",
+  "store": "apple_app_store",
+  "product_id": "bcoins_pack_100",
+  "token_or_tx_id": "apple_tx_{{$guid}}",
+  "userId": "{{userId}}"
+}
+
+### Debit Wallet (Create Table Simulation)
+POST {{baseUrl}}/wallet/debit
+Content-Type: application/json
+
+{
+  "userId": "{{userId}}",
+  "amount": 10,
+  "reason": "CREATE_TABLE",
+  "tableId": "d3b1a2c3-d4e5-f6g7-h8i9-j0k1l2m3n4o5",
+  "metadata": { "tableName": "Mesa do Fabrício" }
+}

@@ -40,6 +40,9 @@ const BackgroundMusic: React.FC<Props> = ({ currentScreen }) => {
         if (hasAutoStartedRef.current) return;
 
         const handleUnblock = () => {
+            // Prevent auto-unblock on GameScreen to avoid interrupting game audio priority
+            if (currentScreen === 'game') return;
+
             console.log("[Audio] System primed via interaction.");
             hasAutoStartedRef.current = true;
 
@@ -49,13 +52,15 @@ const BackgroundMusic: React.FC<Props> = ({ currentScreen }) => {
 
             // Prime the engine: browsers need a .play() call inside the handler to unblock future autoplay
             if (audioRef.current) {
-                if (!isLoginFlow) {
-                    if (!isMuted && !isPlaying) togglePlay();
-                    audioRef.current.play().catch(() => { });
-                } else {
-                    // Priming silently on login screen so engine is ready for Home transition
-                    audioRef.current.play().then(() => audioRef.current?.pause()).catch(() => { });
-                }
+                // Priming: Just unblock the context. 
+                // We play and pause, but we verify if we SHOULD be playing.
+                // If we are NOT playing in the store, we ensure we stay paused.
+                audioRef.current.play().then(() => {
+                    const storeState = useAudioStore.getState();
+                    if (!storeState.isPlaying) {
+                        audioRef.current?.pause();
+                    }
+                }).catch(() => { });
             }
         };
 
@@ -66,7 +71,7 @@ const BackgroundMusic: React.FC<Props> = ({ currentScreen }) => {
             window.removeEventListener('mousedown', handleUnblock, true);
             window.removeEventListener('touchstart', handleUnblock, true);
         };
-    }, [isPlaying, isMuted, togglePlay, isLoginFlow]);
+    }, [isPlaying, isMuted, togglePlay, isLoginFlow, currentScreen]);
 
     // Track path with improved robust encoding
     const getTrackPath = (genre: MusicGenre, index: number) => {

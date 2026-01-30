@@ -11,8 +11,9 @@
     <link rel="icon" type="image/png" href="/pwa-192x192.png">
     <title>Bingola - Bingo Social</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
     <link
-        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;700;800&family=Fredoka:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;700;800&family=Fredoka:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Bangers&family=Righteous&family=Graduate&family=Caveat:wght@400;700&display=swap"
         rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
         rel="stylesheet" />
@@ -32,7 +33,11 @@
                     fontFamily: {
                         sans: ['Manrope', 'sans-serif'],
                         display: ['Plus Jakarta Sans', 'sans-serif'],
-                        rounded: ['Fredoka', 'sans-serif']
+                        rounded: ['Fredoka', 'sans-serif'],
+                        handwriting: ['Caveat', 'cursive'],
+                        gamer: ['Bangers', 'cursive'],
+                        modernPro: ['Righteous', 'cursive'],
+                        college: ['Graduate', 'serif']
                     },
                     keyframes: {
                         fall: {
@@ -42,6 +47,17 @@
                         float: {
                             '0%, 100%': { transform: 'translateY(0) rotate(0deg)' },
                             '50%': { transform: 'translateY(-20px) rotate(5deg)' },
+                        },
+                        'confetti-fall': {
+                            '0%': { transform: 'translate(0, 0) rotate(0deg)', opacity: '1' },
+                            '25%': { transform: 'translate(calc(var(--velocity) * 5), 25vh) rotate(90deg)' },
+                            '50%': { transform: 'translate(calc(var(--velocity) * -5), 50vh) rotate(180deg)' },
+                            '75%': { transform: 'translate(calc(var(--velocity) * 2), 75vh) rotate(270deg)' },
+                            '100%': { transform: 'translate(0, 100vh) rotate(var(--rotation))', opacity: '0' },
+                        },
+                        firework: {
+                            '0%': { transform: 'scale(0.1)', opacity: '1', boxShadow: '0 0 0 0 #fff, 30px 30px 0 0 #ff3d71, -30px -30px 0 0 #a855f7, 30px -30px 0 0 #ff843d, -30px 30px 0 0 #22c55e' },
+                            '100%': { transform: 'scale(5)', opacity: '0', boxShadow: '0 0 0 50px transparent, 100px 100px 0 0 transparent, -100px -100px 0 0 transparent, 100px -100px 0 0 transparent, -100px 100px 0 0 transparent' }
                         }
                     },
                     animation: {
@@ -49,6 +65,8 @@
                         'fall-medium': 'fall 6s linear infinite',
                         'fall-fast': 'fall 4s linear infinite',
                         'float-slow': 'float 6s ease-in-out infinite',
+                        'confetti-fall': 'confetti-fall 4s ease-out forwards',
+                        'firework': 'firework 1.5s ease-out forwards infinite',
                     }
                 }
             }

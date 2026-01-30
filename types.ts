@@ -41,5 +41,9 @@ export type AppScreen =
   | 'audio_settings'
   | 'rules_settings'
   | 'chat'
-  | 'edit_card'
-  | 'friends';
+  | 'friends'
+  | 'master_hub'
+  | 'sub_admin'
+  | 'player_management'
+  | 'transaction_logs'
+  | 'edit_card';

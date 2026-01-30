@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useNotificationStore } from '../state/notificationStore';
+import { useUserStore } from '../state/userStore';
 import { AppScreen } from '../types';
 
 interface Props {
@@ -10,7 +11,7 @@ interface Props {
 }
 
 export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
-  const [user, setUser] = useState<any>(null);
+  const { profile, refreshProfile } = useUserStore();
   const [isUpdating, setIsUpdating] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -29,7 +30,8 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
   const [showExtrato, setShowExtrato] = useState(false);
   const [transactions, setTransactions] = useState<any[]>([]);
 
-  const fetchProfile = async () => {
+  const fetchProfileData = async () => {
+    await refreshProfile();
     const { data: { user: authUser } } = await supabase.auth.getUser();
 
     // Always fetch app settings for cycle display/countdown
@@ -44,25 +46,14 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
       if (authUser.email?.toLowerCase() === 'fabricio.leonn@gmail.com') {
         setIsMaster(true);
       }
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', authUser.id)
-        .maybeSingle();
-
       if (profile) {
-        setUser({
-          ...profile,
-          email: authUser.email
-        });
         setNewName(profile.username || '');
       }
     }
   };
 
   useEffect(() => {
-    fetchProfile();
+    fetchProfileData();
   }, []);
 
   useEffect(() => {
@@ -117,7 +108,7 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
           supabase.rpc('reset_all_bpoints').then(({ error }) => {
             if (!error) {
               console.log("[Admin] Global reset successful.");
-              fetchProfile();
+              fetchProfileData();
               setTimeout(() => setIsResetting(false), 2000);
             } else {
               console.error("[Admin] Auto-reset failed:", error);
@@ -151,17 +142,17 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
   };
 
   const handleUpdateProfile = async () => {
-    if (!newName.trim() || !user) return;
+    if (!newName.trim() || !profile) return;
     setIsUpdating(true);
     try {
       const { error } = await supabase
         .from('profiles')
         .update({ username: newName })
-        .eq('id', user.id);
+        .eq('id', profile.id);
 
       if (error) throw error;
 
-      setUser({ ...user, username: newName });
+      await refreshProfile();
       setIsEditing(false);
       useNotificationStore.getState().show('Perfil atualizado!', 'success');
     } catch (err: any) {
@@ -172,7 +163,9 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
   };
 
   const handleChangePassword = async () => {
-    const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    if (!authUser || !profile) return;
+    const { error } = await supabase.auth.resetPasswordForEmail(authUser.email!, {
       redirectTo: `${window.location.origin}/reset-password`,
     });
     if (error) useNotificationStore.getState().show(error.message, 'error');
@@ -189,7 +182,7 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
 
       const file = event.target.files[0];
       const fileExt = file.name.split('.').pop();
-      const fileName = `${user.id}/${Math.random()}.${fileExt}`;
+      const fileName = `${profile.id}/${Math.random()}.${fileExt}`;
       const filePath = `${fileName}`;
 
       // 1. Upload file to Supabase Storage
@@ -210,13 +203,13 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
       const { error: updateError } = await supabase
         .from('profiles')
         .update({ avatar_url: publicUrl })
-        .eq('id', user.id);
+        .eq('id', profile.id);
 
       if (updateError) {
         throw updateError;
       }
 
-      setUser({ ...user, avatar_url: publicUrl });
+      await refreshProfile();
       useNotificationStore.getState().show('Foto de perfil atualizada com sucesso!', 'success');
     } catch (error: any) {
       useNotificationStore.getState().show(error.message, 'error');
@@ -226,17 +219,17 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
   };
 
   const addTestCoins = async () => {
-    if (isUpdating || !user || !isMaster) return;
+    if (isUpdating || !profile || !isMaster) return;
     setIsUpdating(true);
 
-    const newBalance = (user.bcoins || 0) + 100;
+    const newBalance = (profile.bcoins || 0) + 100;
     const { error } = await supabase
       .from('profiles')
       .update({ bcoins: newBalance })
-      .eq('id', user.id);
+      .eq('id', profile.id);
 
     if (!error) {
-      setUser({ ...user, bcoins: newBalance });
+      await refreshProfile();
       useNotificationStore.getState().show('BCOINS de teste adicionados!', 'success');
     }
 
@@ -256,7 +249,7 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
 
           if (!error) {
             useNotificationStore.getState().show("Todos os BPoints foram resetados!", 'success');
-            fetchProfile();
+            fetchProfileData();
           } else {
             console.error("RPC Error:", error);
             useNotificationStore.getState().show("Falha no Reset Global. Verifique se a função RPC V3 foi criada no Supabase.", 'error');
@@ -324,7 +317,7 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
       // 2. Record Transaction
       const { error: txError } = await supabase.from('bcoins_transactions').insert({
         user_id: selectedPlayer.id,
-        master_id: user.id,
+        master_id: profile!.id,
         amount: finalAmount,
         type: type,
         reason: type === 'gift' ? 'Presente Master' : 'Retirada Master'
@@ -358,13 +351,13 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
   };
 
   const shareReferral = () => {
-    if (!user?.referral_code) return;
-    const text = `Vem jogar Bingola comigo! 🎱\nUse meu código de indicação: ${user.referral_code}\n\nGanhe bônus na sua primeira compra! 🎁✨`;
+    if (!profile?.referral_code) return;
+    const text = `Vem jogar Bingola comigo! 🎱\nUse meu código de indicação: ${profile.referral_code}\n\nGanhe bônus na sua primeira compra! 🎁✨`;
 
     if (navigator.share) {
       navigator.share({ title: 'Bingola', text, url: window.location.origin });
     } else {
-      copyToClipboard(user.referral_code, "Código");
+      copyToClipboard(profile!.referral_code, "Código");
     }
   };
 
@@ -384,8 +377,8 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
         <div className="flex flex-col items-center py-10">
           <div className="relative mb-6">
             <div className="w-32 h-32 rounded-full border-4 border-primary p-1 shadow-2xl shadow-primary/10 overflow-hidden relative group">
-              {user?.avatar_url ? (
-                <img src={user.avatar_url} className="w-full h-full rounded-full object-cover" alt="User Profile" />
+              {profile?.avatar_url ? (
+                <img src={profile.avatar_url} className="w-full h-full rounded-full object-cover" alt="User Profile" />
               ) : (
                 <div className="w-full h-full rounded-full bg-white/5 flex items-center justify-center">
                   <span className="material-symbols-outlined text-4xl text-white/20">person</span>
@@ -415,7 +408,7 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
               />
             </div>
             <div className="absolute bottom-1 right-1 bg-primary text-black font-black text-[10px] px-3 py-1 rounded-full border-2 border-background-dark">
-              LVL {user?.level || 1}
+              LVL {profile?.level || 1}
             </div>
           </div>
           {isEditing ? (
@@ -446,10 +439,10 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
           ) : (
             <div className="text-center group cursor-pointer" onClick={() => setIsEditing(true)}>
               <h1 className="text-3xl font-black text-white tracking-tight flex items-center justify-center gap-2">
-                @{user?.username || 'Explorador'}
+                @{profile?.username || 'Explorador'}
                 <span className="material-symbols-outlined text-white/20 group-hover:text-primary transition-colors text-xl">edit</span>
               </h1>
-              <p className="text-white/40 text-sm mt-1">{user?.email || 'Visitante'}</p>
+              <p className="text-white/40 text-sm mt-1">{profile?.email || 'Visitante'}</p>
             </div>
           )}
         </div>
@@ -458,13 +451,13 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
           <div className="bg-surface-dark p-5 rounded-3xl border border-white/5">
             <span className="material-symbols-outlined text-primary text-3xl mb-3">account_balance_wallet</span>
             <p className="text-[10px] font-black uppercase tracking-widest text-white/30">Saldo BCOINS</p>
-            <p className="text-xl font-black mt-1 text-white">B$ {user?.bcoins || 0}</p>
+            <p className="text-xl font-black mt-1 text-white">B$ {profile?.bcoins || 0}</p>
           </div>
           <div className="bg-surface-dark p-5 rounded-3xl border border-white/5 relative overflow-hidden">
             <div className="absolute top-0 right-0 w-16 h-16 bg-green-500/5 blur-2xl"></div>
             <span className="material-symbols-outlined text-3xl mb-3 text-green-500">military_tech</span>
             <p className="text-[10px] font-black uppercase tracking-widest text-white/30">BPOINTS (Ranking)</p>
-            <p className="text-xl font-black mt-1 text-green-500">{user?.bpoints || 0}</p>
+            <p className="text-xl font-black mt-1 text-green-500">{profile?.bpoints || 0}</p>
           </div>
         </div>
 
@@ -474,11 +467,11 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
           <div className="flex items-center justify-between mb-4">
             <div>
               <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em] mb-1">Seu Código de Indicação</p>
-              <h3 className="text-3xl font-black text-white italic tracking-tighter uppercase">{user?.referral_code || '------'}</h3>
+              <h3 className="text-3xl font-black text-white italic tracking-tighter uppercase">{profile?.referral_code || '------'}</h3>
             </div>
             <div className="flex gap-2">
               <button
-                onClick={() => copyToClipboard(user?.referral_code || '', "Código")}
+                onClick={() => copyToClipboard(profile?.referral_code || '', "Código")}
                 className="size-14 bg-white/10 text-white rounded-2xl flex items-center justify-center hover:bg-white/20 active:scale-95 transition-all"
                 title="Copiar Código"
               >
@@ -534,159 +527,12 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
             <span className="material-symbols-outlined text-white/20">chevron_right</span>
           </button>
 
-          {isMaster && (
-            <>
-              <h3 className="text-[10px] font-black uppercase tracking-widest text-primary px-1 pt-6 flex items-center gap-2">
-                <span className="material-symbols-outlined text-sm">construction</span>
-                Painel Master Administrativo
-              </h3>
+          <h3 className="text-[10px] font-black uppercase tracking-widest text-white/30 px-1 pt-4">Legal</h3>
 
-              <div className="bg-primary/5 border border-primary/20 rounded-[2.5rem] p-6 space-y-6">
-                <div>
-                  <div className="flex items-center justify-between mb-4">
-                    <p className="text-[10px] font-black text-white/40 uppercase tracking-widest">Ciclo de Reset de BPoints</p>
-                    {adminTimeLeft && (
-                      <div className="flex items-center gap-1.5 px-2 py-1 bg-primary/10 rounded-lg">
-                        <span className="material-symbols-outlined text-[10px] text-primary animate-pulse">timer</span>
-                        <p className="text-[9px] font-black text-primary tracking-widest">{adminTimeLeft}</p>
-                      </div>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    {['manual', 'teste', 'daily', 'weekly', 'biweekly', 'monthly'].map(mode => (
-                      <button
-                        key={mode}
-                        onClick={() => handleUpdateResetMode(mode)}
-                        className={`py-2 px-3 rounded-xl text-[9px] font-black uppercase border transition-all ${appSettings?.bpoints_reset_mode === mode ? 'bg-primary border-primary text-black' : 'bg-white/5 border-white/10 text-white/40'}`}
-                      >
-                        {mode === 'manual' ? 'Desativado' :
-                          mode === 'teste' ? 'Teste (15s)' :
-                            mode === 'daily' ? 'Diário' :
-                              mode === 'weekly' ? 'Semanal' :
-                                mode === 'biweekly' ? 'Quinzenal' : 'Mensal'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t border-white/5">
-                  <button
-                    onClick={handleManualReset}
-                    disabled={isUpdating}
-                    className="w-full h-14 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-500 font-black rounded-2xl flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all"
-                  >
-                    <span className="material-symbols-outlined text-xl">restart_alt</span>
-                    <span className="uppercase tracking-widest text-[10px]">{isUpdating ? 'PROCESSANDO...' : 'Zerar BPoints Global'}</span>
-                  </button>
-                  {appSettings?.last_bpoints_reset && (
-                    <p className="text-center text-[8px] text-white/20 font-bold mt-2 uppercase">
-                      Último reset: {new Date(appSettings.last_bpoints_reset).toLocaleString('pt-BR')}
-                    </p>
-                  )}
-                </div>
-
-                {/* Master Player Management */}
-                <div className="pt-6 border-t border-white/5 space-y-4">
-                  <p className="text-[10px] font-black text-white/40 uppercase tracking-widest">Gestão de Jogadores</p>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleSearchPlayer()}
-                      placeholder="Buscar @username"
-                      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-[11px] font-black uppercase outline-none focus:border-primary/50"
-                    />
-                    <button onClick={handleSearchPlayer} className="px-4 bg-primary text-black rounded-xl font-black text-[10px] uppercase">Buscar</button>
-                  </div>
-
-                  {searchResults.length > 0 && !selectedPlayer && (
-                    <div className="bg-black/20 rounded-2xl p-2 space-y-1">
-                      {searchResults.map(p => (
-                        <button
-                          key={p.id}
-                          onClick={() => setSelectedPlayer(p)}
-                          className="w-full text-left p-3 hover:bg-white/5 rounded-xl flex items-center justify-between"
-                        >
-                          <span className="text-[11px] font-black text-white/60">@{p.username}</span>
-                          <span className="text-[9px] font-bold text-primary">Saldo: B$ {p.bcoins}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {selectedPlayer && (
-                    <div className="bg-primary/10 border border-primary/20 rounded-2xl p-4 space-y-4 animate-in slide-in-from-top-2">
-                      <div className="flex justify-between items-center">
-                        <p className="text-[10px] font-black text-primary uppercase">Gerenciando @{selectedPlayer.username}</p>
-                        <button onClick={() => setSelectedPlayer(null)} className="material-symbols-outlined text-primary text-lg">close</button>
-                      </div>
-                      <div className="flex flex-col sm:flex-row gap-2">
-                        <input
-                          type="number"
-                          value={giftAmount}
-                          onChange={(e) => setGiftAmount(e.target.value)}
-                          placeholder="Quantidade"
-                          className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm font-black text-white outline-none min-w-0"
-                        />
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleManageBCoins('gift')}
-                            className="flex-1 px-4 py-3 bg-green-500 text-black rounded-xl font-black text-[10px] uppercase shadow-lg shadow-green-500/20 active:scale-95 transition-all"
-                          >
-                            Dar
-                          </button>
-                          <button
-                            onClick={() => handleManageBCoins('withdraw')}
-                            className="flex-1 px-4 py-3 bg-red-500 text-black rounded-xl font-black text-[10px] uppercase shadow-lg shadow-red-500/20 active:scale-95 transition-all whitespace-nowrap"
-                          >
-                            Retirar
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  <button
-                    onClick={() => onNavigate('store_admin')}
-                    className="w-full h-12 bg-primary/10 border border-primary/20 text-primary font-black rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all text-[10px] uppercase tracking-widest mt-2"
-                  >
-                    <span className="material-symbols-outlined text-lg">storefront</span>
-                    Gerenciador da Loja
-                  </button>
-
-                  <button
-                    onClick={() => { setShowExtrato(true); fetchTransactions(); }}
-                    className="w-full h-12 bg-white/5 border border-white/10 text-white/60 font-black rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all text-[10px] uppercase tracking-widest"
-                  >
-                    <span className="material-symbols-outlined text-lg">history_edu</span>
-                    Extrato de Movimentações
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
-
-          <h3 className="text-[10px] font-black uppercase tracking-widest text-white/30 px-1 pt-4">Ações Rápidas</h3>
-
-          {isMaster && (
-            <button
-              onClick={addTestCoins}
-              disabled={isUpdating}
-              className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-between active:scale-95 transition-all"
-            >
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center">
-                  <span className="material-symbols-outlined text-primary">{isUpdating ? 'sync' : 'add_card'}</span>
-                </div>
-                <div className="text-left">
-                  <p className="font-bold text-sm">Recarga de Teste (Admin)</p>
-                  <p className="text-[10px] text-white/40">Adicionar +100 BCOINS instantaneamente</p>
-                </div>
-              </div>
-              <span className="material-symbols-outlined text-white/20">chevron_right</span>
-            </button>
-          )}
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-[10px] text-white/40 font-bold uppercase text-center leading-relaxed">
+            Bingola BETA - 2026<br />
+            VOKE - Todos os direitos reservados
+          </div>
         </div>
       </main>
 

@@ -4,7 +4,7 @@ import { persist } from 'zustand/middleware';
 export type MusicGenre = '00INTRO' | '01RELAXANTE' | '02CLÁSSICO' | '03MODERNO' | '04ELETRONICO';
 
 export const GENRE_MANIFEST: Record<MusicGenre, string[]> = {
-    '00INTRO': ["01 - MUSICA BINGOLA.mp3", "02 - firesidechat.mp3"],
+    '00INTRO': ["01 - MUSICA BINGOLA.mp3"],
     '01RELAXANTE': [
         "angelsbymyside.mp3", "cozycoffeehouse.mp3", "echoesfromthemountain.mp3",
         "echoofsadness.mp3", "floatinggarden.mp3", "hearty.mp3",
@@ -47,7 +47,7 @@ interface AudioState {
     toggleNarration: () => void;
     selectedVoice: string;
     setVoice: (voice: string) => void;
-    playSfx: (type: 'drum' | 'drop' | 'win') => void;
+    playSfx: (type: 'drum' | 'drop' | 'win' | 'lose') => void;
 }
 
 export const useAudioStore = create<AudioState>()(
@@ -55,7 +55,7 @@ export const useAudioStore = create<AudioState>()(
         (set, get) => ({
             isMuted: false,
             isPlaying: false,
-            volume: 0.5,
+            volume: 0.15,
             currentGenre: '00INTRO',
             introRequested: false,
             currentTrackIndex: 0, // Now refers to array index
@@ -99,12 +99,15 @@ export const useAudioStore = create<AudioState>()(
 
                 let file = '';
                 if (type === 'drum') file = '/audio/sfx/drum_roll.mp3';
-                else if (type === 'drop') file = '/audio/sfx/ball_drop.mp3';
+                else if (type === 'drop') file = '/audio/sfx/suspense.mp3'; // Tick Tock suspense
                 else if (type === 'win') file = '/audio/sfx/bingo_win.mp3';
+                else if (type === 'lose') file = '/audio/sfx/lose.mp3';
 
                 if (file) {
                     const audio = new Audio(file);
-                    audio.volume = s.volume;
+                    // Use music volume but ensure it's at least 40% for important SFX 
+                    // unless muted
+                    audio.volume = Math.max(0.4, s.volume);
                     audio.play().catch(() => { });
                 }
             }

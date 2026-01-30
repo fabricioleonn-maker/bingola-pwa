@@ -21,12 +21,17 @@ import { AudioSettingsScreen } from './screens/AudioSettingsScreen';
 import { RulesSettingsScreen } from './screens/RulesSettingsScreen';
 import { ChatScreen } from './screens/ChatScreen';
 import { SocialScreen } from './screens/SocialScreen';
+import { MasterHubScreen } from './screens/MasterHubScreen';
+import { SubscriptionAdminScreen } from './screens/SubscriptionAdminScreen';
+import { PlayerManagementScreen } from './screens/PlayerManagementScreen';
+import { TransactionLogScreen } from './screens/TransactionLogScreen';
 import { AppScreen } from './types';
 import { useRoomStore } from './state/roomStore';
 import { useRoomSession } from './state/useRoomSession';
 import { readPersistedRoomId, canAutoResume, setNoResume, clearBingolaLocalState } from './state/persist';
 import { useTutorialStore } from './state/tutorialStore';
 import { useNotificationStore } from './state/notificationStore';
+import { useUserStore } from './state/userStore';
 import { NotificationToast } from './components/NotificationToast';
 
 import { PersistentGameLoop } from './components/PersistentGameLoop';
@@ -34,6 +39,8 @@ import BackgroundMusic from './components/BackgroundMusic';
 import GlobalMusicHeader from './components/GlobalMusicHeader';
 import TutorialOverlay from './components/TutorialOverlay';
 import { RewardNotificationModal } from './components/RewardNotificationModal';
+import { UIEditorModal } from './components/UIEditorModal';
+import { useUILabels } from './state/uiLabelsStore';
 
 const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>('splash');
@@ -52,6 +59,14 @@ const App: React.FC = () => {
     const saved = localStorage.getItem('bingola_last_activity');
     return saved ? parseInt(saved) : Date.now();
   });
+
+  // UI EDITOR GLOBAL
+  const { isEditMode, editingElement, setEditingElement } = useUserStore();
+  const { fetchLabels } = useUILabels();
+
+  useEffect(() => {
+    fetchLabels();
+  }, []);
 
   const [isSessionClaimed, setIsSessionClaimed] = useState(false);
 
@@ -116,6 +131,7 @@ const App: React.FC = () => {
         if (initialSession) {
           console.log("[App] Initial session found:", initialSession.user.id);
           setSession(initialSession);
+          useUserStore.getState().refreshProfile();
         } else {
           setCurrentScreen('login');
         }
@@ -141,6 +157,8 @@ const App: React.FC = () => {
         clearBingolaLocalState();
         setRoomId(null);
         setCurrentScreen('login');
+      } else if (newSession) {
+        useUserStore.getState().refreshProfile();
       }
     });
 
@@ -471,7 +489,11 @@ const App: React.FC = () => {
       );
       case 'host_dashboard': return <HostDashboard onBack={() => setCurrentScreen('home')} onPublish={() => setCurrentScreen('lobby')} onNavigate={setCurrentScreen} />;
       case 'store': return <StoreScreen onBack={() => setCurrentScreen('home')} />;
-      case 'store_admin': return <StoreAdminScreen onBack={() => setCurrentScreen('profile')} />;
+      case 'store_admin': return <StoreAdminScreen onBack={() => setCurrentScreen('master_hub')} />;
+      case 'master_hub': return <MasterHubScreen onBack={() => setCurrentScreen('home')} onNavigate={setCurrentScreen} />;
+      case 'sub_admin': return <SubscriptionAdminScreen onBack={() => setCurrentScreen('master_hub')} />;
+      case 'player_management': return <PlayerManagementScreen onBack={() => setCurrentScreen('master_hub')} />;
+      case 'transaction_logs': return <TransactionLogScreen onBack={() => setCurrentScreen('master_hub')} />;
       case 'ranking': return <RankingScreen onBack={() => setCurrentScreen('home')} />;
       case 'profile': return <ProfileScreen onBack={() => setCurrentScreen('home')} onNavigate={(s) => s === 'customization' ? navigateToCustom('profile') : setCurrentScreen(s)} />;
       case 'winners': return <WinnersScreen onBack={() => setCurrentScreen('home')} />;
@@ -504,6 +526,15 @@ const App: React.FC = () => {
         <TutorialOverlay onNavigate={setCurrentScreen} />
         <RewardNotificationModal />
         <div className="flex-1 relative flex flex-col">{renderScreen()}</div>
+
+        {/* GLOBAL UI EDITOR MODAL */}
+        <UIEditorModal
+          isOpen={!!editingElement}
+          onClose={() => setEditingElement(null)}
+          elementId={editingElement?.id || ''}
+          currentLabel={editingElement?.text || ''}
+          onSave={() => fetchLabels()}
+        />
       </div>
     </div>
   );

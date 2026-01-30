@@ -25,6 +25,8 @@ type RoomStore = {
 
   realtime: RealtimeState;
   lastError: string | null;
+  winnerAnnouncement: any | null;
+  lastResumeTimestamp: number;
 
   // Realtime channel tracking
   channel: any | null;
@@ -69,6 +71,9 @@ type RoomStore = {
   startCleanupStale: (roomId: string) => void;
   stopCleanupStale: () => void;
 
+  sendBroadcast: (event: string, payload?: any) => void;
+  setWinnerAnnouncement: (announcement: any | null) => void;
+
   _cleanupSubscription: () => void;
 };
 
@@ -83,6 +88,8 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
 
   channel: null,
   subscribedRoomId: null,
+  winnerAnnouncement: null,
+  lastResumeTimestamp: 0,
 
   pollingInterval: null,
   pollingRoomId: null,
@@ -135,6 +142,7 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
         lastError: null,
         inFlight: {},
         myStatus: null,
+        winnerAnnouncement: null,
       });
     }
 
@@ -323,6 +331,22 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
           set({ room: { ...current, ...newRoom, drawn_numbers: mergedDrawn } });
         }
       )
+
+      .on('broadcast', { event: 'winner' }, (payload) => {
+        console.log("[RoomStore] Winner broadcast received:", payload.payload);
+        set({
+          winnerAnnouncement: payload.payload,
+          room: get().room ? { ...get().room!, status: 'playing' } : null // Keep playing but visually paused via announcement
+        });
+        localStorage.setItem('bingola_last_winner', JSON.stringify(payload.payload));
+        // We don't force 'finished' because it's just a prize claim, the game continues until host ends it.
+      })
+
+      .on('broadcast', { event: 'resume' }, () => {
+        console.log("[RoomStore] Resume broadcast received.");
+        set({ winnerAnnouncement: null, lastResumeTimestamp: Date.now() });
+        localStorage.removeItem('bingola_last_winner');
+      })
 
       .on(
         'postgres_changes',
@@ -599,6 +623,22 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
   hardExit: async (roomId, userId) => {
     get()._cleanupSubscription();
     await supabase.from('participants').delete().eq('room_id', roomId).eq('user_id', userId);
-    set({ roomId: null, room: null, pending: [], accepted: [] });
+    set({ roomId: null, room: null, pending: [], accepted: [], winnerAnnouncement: null });
   },
+
+  sendBroadcast: (event, payload) => {
+    const { channel } = get();
+    if (channel) {
+      console.log(`[RoomStore] Sending broadcast: ${event}`, payload);
+      channel.send({
+        type: 'broadcast',
+        event,
+        payload
+      });
+    } else {
+      console.warn(`[RoomStore] Cannot send broadcast: No channel for ${event}`);
+    }
+  },
+
+  setWinnerAnnouncement: (announcement) => set({ winnerAnnouncement: announcement }),
 }));

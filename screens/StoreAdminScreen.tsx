@@ -14,6 +14,7 @@ interface StoreProduct {
     icon: string;
     bonus_text: string | null;
     description: string | null;
+    product_id?: string;
 }
 
 interface StoreCoupon {
@@ -40,10 +41,15 @@ export const StoreAdminScreen: React.FC<Props> = ({ onBack }) => {
     const [promoActive, setPromoActive] = useState(false);
     const [promoLabel, setPromoLabel] = useState('');
     const [promoDiscount, setPromoDiscount] = useState(0);
+    const [catalog, setCatalog] = useState<any[]>([]);
 
     // Form states
     const [editingProduct, setEditingProduct] = useState<Partial<StoreProduct> | null>(null);
     const [editingCoupon, setEditingCoupon] = useState<Partial<StoreCoupon> | null>(null);
+
+    // Search state for dropdown
+    const [searchTerm, setSearchTerm] = useState('');
+    const [showSearch, setShowSearch] = useState(false);
 
     useEffect(() => {
         fetchData();
@@ -62,6 +68,11 @@ export const StoreAdminScreen: React.FC<Props> = ({ onBack }) => {
             setPromoLabel(settings.store_promo_label);
             setPromoDiscount(settings.store_promo_discount);
         }
+
+        // Fetch Catalog for dropdown
+        const { data: catalogData } = await supabase.from('product_catalog').select('*');
+        if (catalogData) setCatalog(catalogData);
+
         setIsLoading(false);
     };
 
@@ -121,6 +132,34 @@ export const StoreAdminScreen: React.FC<Props> = ({ onBack }) => {
         }
     };
 
+    const deleteProduct = async (id: string, title: string) => {
+        if (!confirm(`Deseja realmente excluir o produto "${title}"? Esta ação não pode ser desfeita.`)) return;
+
+        try {
+            const { error } = await supabase.from('store_products').delete().eq('id', id);
+            if (error) throw error;
+            useNotificationStore.getState().show(`Produto excluído.`, 'success');
+            fetchData();
+        } catch (err: any) {
+            useNotificationStore.getState().show(err.message, 'error');
+        }
+    };
+
+    const handleEditProduct = (p: StoreProduct) => {
+        setEditingProduct(p);
+        // Initialize search term if product is linked
+        if (p.product_id) {
+            const catalogItem = catalog.find(c => c.product_id === p.product_id);
+            if (catalogItem) {
+                setSearchTerm(`${catalogItem.bcoins_amount} BCOINS (${catalogItem.store_google_sku})`);
+            } else {
+                setSearchTerm(p.product_id); // Fallback
+            }
+        } else {
+            setSearchTerm('');
+        }
+    };
+
     const saveGlobalPromo = async () => {
         setIsSaving(true);
         try {
@@ -135,6 +174,48 @@ export const StoreAdminScreen: React.FC<Props> = ({ onBack }) => {
             fetchData();
         } catch (err: any) {
             useNotificationStore.getState().show(err.message, 'error');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    // Catalog Creation Logic
+    const [isCreatingCatalog, setIsCreatingCatalog] = useState(false);
+    const [newCatalogCoins, setNewCatalogCoins] = useState<number | ''>('');
+
+    const saveCatalogItem = async () => {
+        if (!newCatalogCoins || newCatalogCoins <= 0) {
+            useNotificationStore.getState().show('Digite uma quantidade válida', 'error');
+            return;
+        }
+
+        setIsSaving(true);
+        const amount = Number(newCatalogCoins);
+        const productId = `bcoins_pack_${amount}`;
+        const sku = `bcoins_${amount}`;
+        const appleId = `com.bingola.bcoins.${amount}`;
+
+        try {
+            const { error } = await supabase.from('product_catalog').insert({
+                product_id: productId,
+                store_google_sku: sku,
+                store_apple_product_id: appleId,
+                bcoins_amount: amount
+            });
+
+            if (error) throw error;
+
+            useNotificationStore.getState().show(`Pacote de ${amount} BCOINS criado no backend!`, 'success');
+            setIsCreatingCatalog(false);
+            setNewCatalogCoins('');
+            await fetchData();
+
+            // Auto-select the new item if editing a product
+            if (editingProduct) {
+                setEditingProduct(prev => ({ ...prev, product_id: productId } as any));
+            }
+        } catch (err: any) {
+            useNotificationStore.getState().show('Erro ao criar item: ' + err.message, 'error');
         } finally {
             setIsSaving(false);
         }
@@ -202,7 +283,10 @@ export const StoreAdminScreen: React.FC<Props> = ({ onBack }) => {
                     <div className="flex items-center justify-between">
                         <h3 className="text-[10px] font-black uppercase tracking-widest text-primary">Produtos</h3>
                         <button
-                            onClick={() => setEditingProduct({ coins: 0, title: '', price: 0, is_active: true, is_popular: false, icon: 'payments' })}
+                            onClick={() => {
+                                setEditingProduct({ coins: 0, title: '', price: 0, is_active: true, is_popular: false, icon: 'payments' });
+                                setSearchTerm('');
+                            }}
                             className="px-4 py-2 bg-primary text-black rounded-lg font-black text-[9px] uppercase shadow-lg shadow-primary/20"
                         >
                             Novo Produto
@@ -221,11 +305,14 @@ export const StoreAdminScreen: React.FC<Props> = ({ onBack }) => {
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <button onClick={() => setEditingProduct(p)} className="p-2 text-white/40 hover:text-white transition-colors">
+                                    <button onClick={() => handleEditProduct(p)} className="p-2 text-white/40 hover:text-white transition-colors">
                                         <span className="material-symbols-outlined text-lg">edit</span>
                                     </button>
                                     <button onClick={() => toggleProductActive(p.id, p.is_active)} className={`p-2 transition-colors ${p.is_active ? 'text-green-500' : 'text-red-500'}`}>
                                         <span className="material-symbols-outlined text-lg">{p.is_active ? 'visibility' : 'visibility_off'}</span>
+                                    </button>
+                                    <button onClick={() => deleteProduct(p.id, p.title)} className="p-2 text-red-500/40 hover:text-red-500 transition-colors">
+                                        <span className="material-symbols-outlined text-lg">delete</span>
                                     </button>
                                 </div>
                             </div>
@@ -296,25 +383,82 @@ export const StoreAdminScreen: React.FC<Props> = ({ onBack }) => {
 
                         <div className="space-y-5">
                             <div className="space-y-1.5">
-                                <p className="text-[8px] font-black text-white/20 uppercase pl-1">Título do Pacote</p>
+                                <p className="text-[8px] font-black text-white/20 uppercase pl-1">Vincular Produto (Backend)</p>
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        placeholder="BUSCAR PACOTE..."
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3.5 text-xs font-black uppercase text-white outline-none focus:border-primary/50 transition-all"
+                                        value={searchTerm}
+                                        onChange={e => {
+                                            setSearchTerm(e.target.value.toUpperCase());
+                                            setShowSearch(true);
+                                        }}
+                                        onFocus={() => setShowSearch(true)}
+                                    />
+                                    {showSearch && (
+                                        <div className="absolute top-full left-0 right-0 mt-2 max-h-48 overflow-y-auto bg-surface-dark border border-white/10 rounded-xl shadow-2xl z-50">
+                                            {catalog
+                                                .filter(c =>
+                                                    c.product_id.toUpperCase().includes(searchTerm) ||
+                                                    c.bcoins_amount.toString().includes(searchTerm)
+                                                )
+                                                .sort((a, b) => a.bcoins_amount - b.bcoins_amount)
+                                                .map(c => (
+                                                    <button
+                                                        key={c.product_id}
+                                                        onClick={() => {
+                                                            setEditingProduct({
+                                                                ...editingProduct,
+                                                                product_id: c.product_id,
+                                                                coins: c.bcoins_amount
+                                                            });
+                                                            setSearchTerm(`${c.bcoins_amount} BCOINS (${c.store_google_sku})`);
+                                                            setShowSearch(false);
+                                                        }}
+                                                        className="w-full text-left px-4 py-3 text-[10px] font-black uppercase text-white hover:bg-white/10 border-b border-white/5 last:border-0"
+                                                    >
+                                                        {c.bcoins_amount} BCOINS <span className="text-white/40 ml-2">{c.store_google_sku}</span>
+                                                    </button>
+                                                ))}
+                                            {catalog.filter(c => c.product_id.toUpperCase().includes(searchTerm)).length === 0 && (
+                                                <div className="px-4 py-3 text-[9px] font-bold text-white/20 uppercase text-center">Nenhum pacote encontrado</div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                                <button
+                                    onClick={() => setIsCreatingCatalog(true)}
+                                    className="w-full mt-2 py-2 bg-primary/20 text-primary rounded-lg text-[9px] font-black uppercase hover:bg-primary/30 transition-all"
+                                >
+                                    + Criar Novo Item no Catálogo
+                                </button>
+                                {/* Overlay to close search when clicking outside */}
+                                {showSearch && <div className="fixed inset-0 z-40" onClick={() => setShowSearch(false)}></div>}
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <p className="text-[8px] font-black text-white/20 uppercase pl-1">Quantidade de BCOINS</p>
                                 <input
-                                    type="text"
-                                    placeholder="Ex: Pacote Iniciante"
-                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3.5 text-xs font-black uppercase text-white outline-none focus:border-primary/50 transition-all"
-                                    value={editingProduct.title || ''}
-                                    onChange={e => setEditingProduct({ ...editingProduct, title: e.target.value })}
+                                    type="number"
+                                    placeholder="0"
+                                    className={`w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3.5 text-xs font-black uppercase text-white outline-none focus:border-primary/50 transition-all ${editingProduct.product_id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    value={editingProduct?.coins || ''}
+                                    onChange={e => setEditingProduct({ ...editingProduct, coins: parseInt(e.target.value) })}
+                                    disabled={!!editingProduct.product_id} // Disable if linked
                                 />
+                                {editingProduct.product_id && <p className="text-[8px] text-primary italic pl-1">* Gerenciado pelo Catálogo</p>}
                             </div>
 
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="space-y-1.5">
-                                    <p className="text-[8px] font-black text-white/20 uppercase pl-1">Quantidade BCoins</p>
+                                    <p className="text-[8px] font-black text-white/20 uppercase pl-1">Título Visual</p>
                                     <input
-                                        type="number"
-                                        placeholder="0"
-                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3.5 text-xs font-black text-white outline-none focus:border-primary/50 transition-all"
-                                        value={editingProduct.coins || ''}
-                                        onChange={e => setEditingProduct({ ...editingProduct, coins: parseInt(e.target.value) || 0 })}
+                                        type="text"
+                                        placeholder="Ex: Pacote Ouro"
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3.5 text-xs font-black uppercase text-white outline-none focus:border-primary/50 transition-all"
+                                        value={editingProduct.title || ''}
+                                        onChange={e => setEditingProduct({ ...editingProduct, title: e.target.value })}
                                     />
                                 </div>
                                 <div className="space-y-1.5">
@@ -409,6 +553,44 @@ export const StoreAdminScreen: React.FC<Props> = ({ onBack }) => {
                             <div className="flex gap-2">
                                 <button onClick={() => setEditingCoupon(null)} className="flex-1 py-3 bg-white/5 text-white/40 rounded-xl text-[9px] font-black uppercase">Cancelar</button>
                                 <button onClick={saveCoupon} disabled={isSaving} className="flex-[2] py-3 bg-primary text-black rounded-xl font-black text-[9px] uppercase shadow-lg shadow-primary/20">{isSaving ? 'Salvando...' : 'Salvar Cupom'}</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {isCreatingCatalog && (
+                <div className="fixed inset-0 z-[500] bg-black/80 backdrop-blur-xl p-6 flex items-center justify-center animate-in fade-in zoom-in duration-300">
+                    <div className="w-full max-w-[320px] bg-surface-dark border border-white/10 rounded-3xl p-6 space-y-6 shadow-2xl">
+                        <div className="text-center space-y-1">
+                            <h3 className="font-black uppercase italic tracking-widest text-sm text-primary">Novo Item no Backend</h3>
+                            <p className="text-[10px] text-white/40">Isso cria o registro oficial no banco de dados.</p>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div className="space-y-1.5">
+                                <p className="text-[8px] font-black text-white/20 uppercase pl-1">Quantidade de BCOINS</p>
+                                <input
+                                    type="number"
+                                    placeholder="Ex: 1760"
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3.5 text-lg font-black text-center text-white outline-none focus:border-primary/50 transition-all"
+                                    value={newCatalogCoins}
+                                    onChange={e => setNewCatalogCoins(parseInt(e.target.value) || '')}
+                                    autoFocus
+                                />
+                            </div>
+
+                            <div className="bg-white/5 rounded-xl p-3 space-y-1">
+                                <p className="text-[8px] font-black text-white/20 uppercase">IDs Gerados (Visualização)</p>
+                                <p className="text-[9px] font-mono text-white/60">ID: bcoins_pack_{newCatalogCoins || '0'}</p>
+                                <p className="text-[9px] font-mono text-white/60">SKU: bcoins_{newCatalogCoins || '0'}</p>
+                            </div>
+
+                            <div className="flex gap-2 pt-2">
+                                <button onClick={() => setIsCreatingCatalog(false)} className="flex-1 py-3 bg-white/5 text-white/40 rounded-xl text-[9px] font-black uppercase hover:bg-white/10 transition-all">Cancelar</button>
+                                <button onClick={saveCatalogItem} disabled={isSaving || !newCatalogCoins} className="flex-[2] py-3 bg-primary text-black rounded-xl font-black text-[9px] uppercase shadow-lg shadow-primary/20 disabled:opacity-50 hover:scale-[1.02] active:scale-95 transition-all">
+                                    {isSaving ? 'Criando...' : 'Criar e Vincular'}
+                                </button>
                             </div>
                         </div>
                     </div>

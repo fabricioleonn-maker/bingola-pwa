@@ -2,14 +2,17 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useNotificationStore } from '../state/notificationStore';
+import { useUserStore } from '../state/userStore';
+import { SubscriptionModal } from '../components/SubscriptionModal';
+import { RewardNotificationModal } from '../components/RewardNotificationModal';
 
 interface Props {
   onBack: () => void;
 }
 
 export const StoreScreen: React.FC<Props> = ({ onBack }) => {
-  const [balance, setBalance] = useState(0);
-  const [profileId, setProfileId] = useState<string | null>(null);
+  const { profile, verifyPurchase, refreshProfile, isPremium } = useUserStore();
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [promoCode, setPromoCode] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<{ code: string, discount: number } | null>(null);
   const [promoError, setPromoError] = useState('');
@@ -25,16 +28,7 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
 
   useEffect(() => {
     const fetchData = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setProfileId(user.id);
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('bcoins, referred_by')
-          .eq('id', user.id)
-          .maybeSingle();
-        if (profile) setBalance(profile.bcoins || 0);
-      }
+      await refreshProfile();
 
       // Fetch dynamic products
       const { data: dbProducts } = await supabase
@@ -59,10 +53,16 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
   }, []);
 
   const getPackagePrice = (pkg: any) => {
-    const basePrice = pkg.promo_price || pkg.price;
+    let basePrice = pkg.promo_price || pkg.price;
+
+    // Use a melhor promoção disponível (não cumulativa se houver global)
     if (globalPromo?.active) {
-      return basePrice * (1 - globalPromo.discount / 100);
+      basePrice = basePrice * (1 - globalPromo.discount / 100);
+    } else if (isPremium) {
+      // Premium apenas se não houver promoção global ativa
+      basePrice = basePrice * 0.90;
     }
+
     return basePrice;
   };
 
@@ -95,58 +95,58 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
 
   const finalizePurchase = async () => {
     if (cart.length === 0) return;
+    if (!profile) return;
+
     setIsFinishing(true);
-
-    const addedCoins = getTotalCoins();
-    const netTotal = getNetTotal();
-
-    if (!profileId) {
-      // Offline/Guest simulation
-      setLastPurchase({
-        coins: addedCoins,
-        total: netTotal,
-        method: 'Simulado'
-      });
-      setShowThankYou(true);
-      setCart([]);
-      setIsFinishing(false);
-      return;
-    }
+    let successCount = 0;
+    let totalAdded = 0;
+    let totalSpent = 0;
 
     try {
-      console.log("[Store] Finalizing purchase. Referrer ID:", referrerId, "Coupon:", appliedCoupon?.code);
-      // Use new secure RPC for atomic update and coupon/referral processing
-      const { error: rpcError } = await supabase.rpc('finalize_store_purchase', {
-        p_buyer_id: profileId,
-        p_coins_added: addedCoins,
-        p_referrer_id: referrerId,
-        p_coupon_code: referrerId ? null : appliedCoupon?.code
-      });
+      // Process all items in the cart
+      for (const item of cart) {
+        // Find the catalog product ID
+        let productId = packages.find(p => p.coins === item.coins)?.product_id;
 
-      if (rpcError) {
-        console.error("RPC Error:", rpcError);
-        // Fallback for buyer balance only
-        const { error: fallbackError } = await supabase
-          .from('profiles')
-          .update({ bcoins: balance + addedCoins, referred_by: referrerId || undefined })
-          .eq('id', profileId);
+        if (!productId) {
+          console.warn(`[Store] Product ID lookup failed for ${item.coins} coins (Title: ${item.title}). Falling back to 100 pack.`);
+          productId = 'bcoins_pack_100';
+        }
 
-        if (fallbackError) throw fallbackError;
+        // Generate a mock token for testing (one per item)
+        const mockToken = `pwa_cart_${Math.random().toString(36).substr(2, 9)}`;
+
+        // Process this item
+        const success = await verifyPurchase('android', 'google_play', productId, mockToken);
+
+        if (success) {
+          successCount++;
+          totalAdded += item.coins;
+          totalSpent += item.price;
+        }
       }
 
-      setLastPurchase({
-        coins: addedCoins,
-        total: netTotal,
-        method: 'PIX / Crédito',
-        date: new Date().toLocaleString('pt-BR')
-      });
+      if (successCount > 0) {
+        setLastPurchase({
+          coins: totalAdded,
+          total: totalSpent,
+          method: 'Loja Integrada',
+          date: new Date().toLocaleString('pt-BR')
+        });
 
-      setBalance(balance + addedCoins);
-      setAppliedCoupon(null);
-      setPromoCode('');
-      setReferrerId(null);
-      setCart([]);
-      setShowThankYou(true);
+        // Clear cart only if at least one item succeeded (simplification for UX)
+        setAppliedCoupon(null);
+        setPromoCode('');
+        setReferrerId(null);
+        setCart([]);
+        setShowThankYou(true);
+
+        if (successCount < cart.length) {
+          useNotificationStore.getState().show(`Atenção: ${cart.length - successCount} item(s) falharam no processamento.`, 'error');
+        }
+      } else {
+        // All failed
+      }
     } catch (err: any) {
       useNotificationStore.getState().show("Erro ao processar checkout: " + err.message, 'error');
     } finally {
@@ -156,7 +156,7 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
 
   const applyPromoCode = async () => {
     setPromoError('');
-    if (!promoCode.trim() || !profileId) return;
+    if (!promoCode.trim() || !profile) return;
     const code = promoCode.trim().toUpperCase();
 
     try {
@@ -198,13 +198,13 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
       }
 
       // 3. It's a valid referral code, now check if user can use it (1st purchase only)
-      const { data: myProfile } = await supabase.from('profiles').select('referred_by').eq('id', profileId).single();
+      const { data: myProfile } = await supabase.from('profiles').select('referred_by').eq('id', profile.id).single();
       if (myProfile?.referred_by) {
         setPromoError('Você já utilizou um código de indicação anteriormente.');
         return;
       }
 
-      if (referrer.id === profileId) {
+      if (referrer.id === profile.id) {
         setPromoError('Você não pode usar seu próprio código.');
         return;
       }
@@ -238,7 +238,7 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
           <div className="bg-white/5 border border-white/10 rounded-2xl p-6 flex items-center justify-between shadow-xl">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
-                <span className="text-3xl font-black text-white">{balance}</span>
+                <span className="text-3xl font-black text-white">{profile?.bcoins || 0}</span>
                 <span className="text-primary font-bold text-xl tracking-tighter">BCOINS</span>
               </div>
               <p className="text-white/40 text-xs">Créditos disponíveis para mesas</p>
@@ -249,9 +249,35 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
           </div>
         </section>
 
+        {/* Premium Subscription Card */}
+        {!isPremium && (
+          <section
+            id="premium-promo-card"
+            onClick={() => setShowSubscriptionModal(true)}
+            className="bg-gradient-to-br from-stone-900 to-black border-2 border-yellow-500/20 rounded-[2.5rem] p-6 shadow-2xl relative overflow-hidden group active:scale-[0.98] transition-all cursor-pointer mb-8"
+          >
+            <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-500/10 blur-3xl -mr-16 -mt-16 group-hover:bg-yellow-500/10 transition-all"></div>
+            <div className="flex items-center justify-between mb-4 relative z-10">
+              <div className="size-14 bg-yellow-500/10 rounded-2xl flex items-center justify-center ring-1 ring-yellow-500/30">
+                <span className="material-symbols-outlined text-yellow-500 text-3xl drop-shadow-[0_0_10px_rgba(234,179,8,0.5)]">crown</span>
+              </div>
+              <div className="bg-yellow-500 text-black text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest animate-pulse">
+                Ouro
+              </div>
+            </div>
+            <h3 className="text-2xl font-black text-white italic tracking-tighter uppercase mb-2">Seja Premium</h3>
+            <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest leading-relaxed mb-6 max-w-[240px]">
+              Libere todos os temas, fontes e ganhe <span className="text-yellow-500 font-black">10% de desconto extra</span> em BCOINS!
+            </p>
+            <div className="flex items-center gap-2 text-yellow-500 font-black text-xs italic">
+              ASSINAR AGORA <span className="material-symbols-outlined text-sm">arrow_forward</span>
+            </div>
+          </section>
+        )}
+
         <section>
           <div className="flex items-center justify-between mb-6">
-            <h3 className="text-xl font-black">Escolha um Pacote</h3>
+            <h3 className="text-xl font-black uppercase tracking-tight text-white italic">Escolha um Pacote</h3>
             {globalPromo?.active && (
               <div className="bg-primary px-3 py-1 rounded-full text-[9px] font-black uppercase text-black animate-pulse">
                 {globalPromo.label} -{globalPromo.discount}% OFF
@@ -259,41 +285,48 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
             )}
           </div>
 
-          <div className="space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {packages.map((pkg, i) => (
-              <div key={i} className={`relative rounded-3xl overflow-hidden bg-white/5 border transition-all ${pkg.popular ? 'border-primary ring-2 ring-primary/20' : 'border-white/10'}`}>
-                {pkg.popular && (
-                  <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-primary text-black text-[9px] font-black uppercase tracking-widest px-4 py-1 rounded-b-xl shadow-lg">
-                    Mais Vendido
+              <div key={i} className={`relative rounded-3xl overflow-hidden bg-white/5 border transition-all hover:scale-[1.02] ${pkg.popular || pkg.is_popular ? 'border-primary ring-2 ring-primary/30 shadow-[0_0_20px_rgba(var(--primary-rgb),0.2)] bg-gradient-to-br from-white/5 to-primary/10' : 'border-white/10 hover:border-white/20'}`}>
+                {(pkg.popular || pkg.is_popular) && (
+                  <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-primary text-black text-[9px] font-black uppercase tracking-widest px-6 py-1.5 rounded-b-xl shadow-lg z-10 whitespace-nowrap">
+                    ⭐ Mais Vendido ⭐
                   </div>
                 )}
-                <div className="p-6 flex items-center gap-6">
-                  <div className={`w-20 h-20 rounded-2xl flex items-center justify-center relative flex-shrink-0 ${pkg.mega ? 'bg-gradient-to-t from-background-dark to-primary/10' : 'bg-primary/10'}`}>
-                    <span className="material-symbols-outlined text-primary text-4xl">{pkg.icon}</span>
-                    {pkg.bonus && <div className="absolute -bottom-2 -right-2 bg-green-500 text-white text-[9px] font-black px-2 py-0.5 rounded-lg border-2 border-background-dark">{pkg.bonus}</div>}
+                <div className="p-5 flex flex-col gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className={`w-16 h-16 rounded-2xl flex items-center justify-center relative flex-shrink-0 ${pkg.mega ? 'bg-gradient-to-t from-background-dark to-primary/10' : 'bg-black/20'}`}>
+                      <span className="material-symbols-outlined text-primary text-3xl">{pkg.icon}</span>
+                      {pkg.bonus && <div className="absolute -bottom-2 -right-2 bg-green-500 text-white text-[8px] font-black px-2 py-0.5 rounded-lg border-2 border-background-dark">{pkg.bonus}</div>}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xl font-black text-white truncate">{pkg.coins} BCOINS</p>
+                      <p className="text-[9px] font-black uppercase text-white/50 truncate leading-tight">{pkg.title}</p>
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <p className="text-lg font-black">{pkg.coins} BCOINS</p>
-                    <p className="text-[10px] font-black uppercase text-white/60">{pkg.title}</p>
-                    {pkg.description && <p className="text-[9px] font-bold text-white/30 lowercase mt-0.5">{pkg.description}</p>}
-                    <div className="flex items-baseline gap-2 mt-3">
+
+                  {pkg.description && (
+                    <div className="bg-black/20 p-2 rounded-lg">
+                      <p className="text-[9px] font-bold text-white/60 lowercase italic text-center leading-tight">"{pkg.description}"</p>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between mt-auto pt-2 border-t border-white/5">
+                    <div className="flex flex-col">
                       {(pkg.promo_price || globalPromo?.active) && (
-                        <span className="text-xs text-white/20 line-through">
+                        <span className="text-[10px] text-white/30 line-through">
                           R$ {(pkg.promo_price ? pkg.price : pkg.price).toFixed(2).replace('.', ',')}
                         </span>
                       )}
-                      <span className="text-2xl font-black text-primary">
+                      <span className="text-xl font-black text-primary drop-shadow-md">
                         R$ {getPackagePrice(pkg).toFixed(2).replace('.', ',')}
                       </span>
                     </div>
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    {pkg.promo_price && <div className="bg-red-600 text-[9px] font-black text-white px-2 py-0.5 rounded-full text-center">PROMO</div>}
                     <button
                       onClick={() => addToCart(pkg)}
-                      className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-black active:scale-95 transition-transform"
+                      className="h-10 px-5 bg-primary rounded-xl flex items-center justify-center text-black active:scale-95 transition-all shadow-lg hover:shadow-primary/30"
                     >
-                      <span className="material-symbols-outlined">add_shopping_cart</span>
+                      <span className="material-symbols-outlined text-xl">add_shopping_cart</span>
                     </button>
                   </div>
                 </div>
@@ -309,7 +342,7 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
             <span className="bg-primary/10 text-primary px-3 py-1 rounded-full text-[10px] font-black">{cart.length} ITENS</span>
           </div>
 
-          <div className="space-y-4 max-h-48 overflow-y-auto pr-2">
+          <div className="space-y-4 max-h-48 overflow-y-auto pr-2 no-scrollbar">
             {cart.length === 0 ? (
               <p className="text-center text-white/20 text-xs py-4 uppercase font-bold italic tracking-widest">Nenhum pacote selecionado</p>
             ) : cart.map((item, idx) => (
@@ -329,11 +362,6 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
           </div>
 
           <div className="pt-4 border-t border-white/5 space-y-4">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-bold text-white/40 uppercase tracking-widest">Subtotal</span>
-              <span className="text-sm font-black">R$ {getGrossTotal().toFixed(2).replace('.', ',')}</span>
-            </div>
-
             <div className="flex justify-between items-center text-green-500">
               <span className="text-xs font-bold uppercase tracking-widest">Total BCOINS</span>
               <span className="text-lg font-black">+{getTotalCoins()}</span>
@@ -388,23 +416,29 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
             )}
           </div>
 
-          {/* Information regarding future App Store integration */}
-          <div className="bg-primary/10 border border-primary/20 rounded-2xl p-4 mb-2">
-            <p className="text-[10px] text-primary font-black uppercase text-center leading-tight">
-              A Loja está em manutenção para integração oficial com Play Store e App Store.
-              <br /><span className="text-white/40">Pagamentos diretos estão suspensos temporariamente.</span>
-            </p>
-          </div>
-
           <button
-            onClick={() => useNotificationStore.getState().show("Compras serão liberadas na atualização das Lojas de Aplicativos.", 'info')}
-            disabled={true}
-            className="w-full h-20 bg-white/5 text-white/20 font-black text-xl rounded-2xl border border-white/5 active:scale-95 transition-all uppercase italic"
+            onClick={finalizePurchase}
+            disabled={isFinishing || cart.length === 0}
+            className="w-full h-20 bg-primary text-black font-black text-xl rounded-2xl shadow-xl shadow-primary/20 active:scale-95 transition-all uppercase italic disabled:opacity-50 flex items-center justify-center gap-3"
           >
-            COMPRAS SUSPENSAS
+            {isFinishing ? (
+              <>
+                <span className="material-symbols-outlined animate-spin">refresh</span>
+                PROCESSANDO...
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined">shopping_cart_checkout</span>
+                FINALIZAR COMPRA
+              </>
+            )}
           </button>
         </section>
       </main>
+
+      {/* Modals */}
+      <SubscriptionModal isOpen={showSubscriptionModal} onClose={() => setShowSubscriptionModal(false)} />
+      <RewardNotificationModal />
 
       {/* Thank You Modal */}
       {showThankYou && (
@@ -428,7 +462,7 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
                 </div>
                 <div className="flex justify-between items-center text-xs">
                   <span className="text-white/20 font-black uppercase tracking-widest">Valor</span>
-                  <span className="text-white font-black">R$ {lastPurchase?.total.toFixed(2).replace('.', ',')}</span>
+                  <span className="text-white font-black">R$ {lastPurchase?.total?.toFixed(2).replace('.', ',')}</span>
                 </div>
                 <div className="flex justify-between items-center text-[10px]">
                   <span className="text-white/10 font-bold uppercase">Pagamento</span>

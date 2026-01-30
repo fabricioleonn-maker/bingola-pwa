@@ -7,6 +7,9 @@ import { clearBingolaLocalState } from '../state/persist';
 import { useTutorialStore } from '../state/tutorialStore';
 import { useInvitationStore } from '../state/invitationStore';
 import QRScanner from '../components/QRScanner';
+import { useUserStore } from '../state/userStore';
+import { useUILabels } from '../state/uiLabelsStore';
+import { EditableElement } from '../components/EditableElement';
 
 interface HomeProps {
   onNavigate: (screen: AppScreen) => void;
@@ -14,7 +17,8 @@ interface HomeProps {
 
 export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
   const [userName, setUserName] = useState('Explorador');
-  const [balance, setBalance] = useState(0);
+  const { profile, refreshProfile, setEditingElement } = useUserStore();
+  const { getLabel } = useUILabels();
   const [profileAvatar, setProfileAvatar] = useState<string | null>(null);
   const [history, setHistory] = useState<any[]>([]);
   // State derived from Store (removed local state for these)
@@ -43,35 +47,11 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
 
   useEffect(() => {
     const fetchProfile = async () => {
+      await refreshProfile();
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setCurrentUserId(user.id);
-        let { data: profile, error } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', user.id)
-          .single();
-
-        if (error && (error as any).code === 'PGRST116') {
-          const { data: newProfile } = await supabase
-            .from('profiles')
-            .upsert({
-              id: user.id,
-              username: user.user_metadata?.username || user.email?.split('@')[0] || 'Usuário',
-              bcoins: 100,
-              level: 1
-            })
-            .select()
-            .single();
-          profile = newProfile as any;
-        }
-
-        if (profile) {
-          setUserName((profile as any).username || 'Usuário');
-          setBalance((profile as any).bcoins || 0);
-          setProfileAvatar((profile as any).avatar_url || null);
-          fetchHistory(user.id);
-        }
+        fetchHistory(user.id);
       }
     };
 
@@ -104,6 +84,14 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
 
     return () => clearInterval(inviteInterval);
   }, [roomId]);
+
+  // Sync Profile Data
+  useEffect(() => {
+    if (profile) {
+      setUserName(profile.username || 'Explorador');
+      setProfileAvatar(profile.avatar_url);
+    }
+  }, [profile]);
 
   const { incoming, respondToInvite } = useInvitationStore();
 
@@ -313,7 +301,7 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
           <h2 className="text-2xl font-bold">Olá, {userName}! 👋</h2>
           <div className="bg-primary/20 px-2 py-0.5 rounded-md border border-primary/30 w-fit mt-1 flex items-center gap-1">
             <span className="material-symbols-outlined text-primary text-[14px]">payments</span>
-            <span className="text-[12px] font-black text-white">{balance} BCOINS</span>
+            <span className="text-[12px] font-black text-white">{profile?.bcoins || 0} BCOINS</span>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -325,8 +313,8 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
           </button>
           <div id="personalize-btn" className="cursor-pointer" onClick={() => onNavigate('profile')}>
             <div className="w-12 h-12 rounded-full border-2 border-primary/20 p-0.5 overflow-hidden">
-              {profileAvatar ? (
-                <img src={profileAvatar} className="w-full h-full rounded-full object-cover" alt="Profile" />
+              {profile?.avatar_url ? (
+                <img src={profile.avatar_url} className="w-full h-full rounded-full object-cover" alt="Profile" />
               ) : (
                 <div className="w-full h-full rounded-full bg-white/5 flex items-center justify-center">
                   <span className="material-symbols-outlined text-white/20 text-xl">person</span>
@@ -384,111 +372,119 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
           )}
 
           {/* 2. Create New Room (Blocked if active) */}
-          <button
-            id="create-room-btn"
-            onClick={() => {
-              if (hasActiveRoom) {
-                useNotificationStore.getState().show("Você já está em uma mesa ativa! Saia dela primeiro ou clique em 'Abrir Lobby'.", 'info');
-                return;
-              }
-              onNavigate('host_dashboard');
-            }}
-            className={`flex flex-col items-center justify-center h-48 rounded-3xl shadow-xl relative overflow-hidden group active:scale-95 transition-all ${hasActiveRoom ? 'bg-white/5 border border-white/5 opacity-50 grayscale cursor-not-allowed' : 'bg-surface-dark border border-white/10'}`}
-          >
-            <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4">
-              <span className="material-symbols-outlined text-white text-3xl">add</span>
-            </div>
-            <span className="text-white font-bold text-lg">Criar Nova Sala</span>
-            <span className="text-white/60 text-[10px] uppercase font-black tracking-widest mt-1">Sorteio em grupo</span>
-          </button>
+          <EditableElement id="btn_home_create" text="Criar Nova Sala" onEdit={setEditingElement} className="flex-1">
+            <button
+              id="create-room-btn"
+              onClick={() => {
+                if (hasActiveRoom) {
+                  useNotificationStore.getState().show("Você já está em uma mesa ativa! Saia dela primeiro ou clique em 'Abrir Lobby'.", 'info');
+                  return;
+                }
+                onNavigate('host_dashboard');
+              }}
+              className={`flex flex-col items-center justify-center h-48 rounded-3xl shadow-xl relative overflow-hidden group active:scale-95 transition-all ${hasActiveRoom ? 'bg-white/5 border border-white/5 opacity-50 grayscale cursor-not-allowed' : 'bg-surface-dark border border-white/10'}`}
+            >
+              <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4">
+                <span className="material-symbols-outlined text-white text-3xl">add</span>
+              </div>
+              <span className="text-white font-bold text-lg">{getLabel('btn_home_create', 'Criar Nova Sala')}</span>
+              <span className="text-white/60 text-[10px] uppercase font-black tracking-widest mt-1">Sorteio em grupo</span>
+            </button>
+          </EditableElement>
 
           {/* 3. Join Room (Blocked if active) */}
-          <button
-            id="join-personalize-section"
-            onClick={() => {
-              if (hasActiveRoom) {
-                useNotificationStore.getState().show("Você já está em uma mesa ativa! Saia dela primeiro ou clique em 'Abrir Lobby'.", 'info');
-                return;
-              }
-              setErrorMsg(null);
-              setShowJoinModal(true);
-            }}
-            className={`flex flex-col items-center justify-center h-48 rounded-3xl group active:scale-95 transition-transform ${hasActiveRoom ? 'bg-white/5 border border-white/5 opacity-50 grayscale cursor-not-allowed' : 'bg-surface-dark border border-white/10'}`}
-          >
-            <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4">
-              <span className="material-symbols-outlined text-primary text-3xl">keyboard</span>
-            </div>
-            <span className="text-white font-bold text-lg">Entrar com Código</span>
-          </button>
+          <EditableElement id="btn_home_join" text="Entrar com Código" onEdit={setEditingElement} className="flex-1">
+            <button
+              id="join-personalize-section"
+              onClick={() => {
+                if (hasActiveRoom) {
+                  useNotificationStore.getState().show("Você já está em uma mesa ativa! Saia dela primeiro ou clique em 'Abrir Lobby'.", 'info');
+                  return;
+                }
+                setErrorMsg(null);
+                setShowJoinModal(true);
+              }}
+              className={`w-full flex flex-col items-center justify-center h-48 rounded-3xl group active:scale-95 transition-transform ${hasActiveRoom ? 'bg-white/5 border border-white/5 opacity-50 grayscale cursor-not-allowed' : 'bg-surface-dark border border-white/10'}`}
+            >
+              <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4">
+                <span className="material-symbols-outlined text-primary text-3xl">keyboard</span>
+              </div>
+              <span className="text-white font-bold text-lg">{getLabel('btn_home_join', 'Entrar com Código')}</span>
+            </button>
+          </EditableElement>
         </div>
 
-        {showJoinModal && (
-          <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-xl flex items-center justify-center p-6 animate-in fade-in duration-300">
-            <div className="bg-surface-dark w-full max-w-[360px] p-8 rounded-[3rem] border border-white/10 shadow-2xl relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 blur-3xl -mr-16 -mt-16"></div>
+        {
+          showJoinModal && (
+            <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-xl flex items-center justify-center p-6 animate-in fade-in duration-300">
+              <div className="bg-surface-dark w-full max-w-[360px] p-8 rounded-[3rem] border border-white/10 shadow-2xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 blur-3xl -mr-16 -mt-16"></div>
 
-              <h3 className="text-2xl font-black text-center mb-2 italic">Entrar na Mesa</h3>
-              <p className="text-white/40 text-[10px] text-center font-black uppercase tracking-widest mb-8">Digite o PIN de 4 dígitos</p>
+                <h3 className="text-2xl font-black text-center mb-2 italic">Entrar na Mesa</h3>
+                <p className="text-white/40 text-[10px] text-center font-black uppercase tracking-widest mb-8">Digite o PIN de 4 dígitos</p>
 
-              <div className="relative group mb-8">
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  maxLength={4}
-                  value={joinCode}
-                  onChange={(e) => setJoinCode(e.target.value.replace(/\D/g, ''))}
-                  placeholder="0000"
-                  id="join-code-input"
-                  className="w-full h-20 bg-white/5 border border-white/10 rounded-2xl text-center text-4xl font-black tracking-[0.5em] text-primary focus:border-primary/50 focus:ring-0 transition-all placeholder:opacity-10"
-                  autoFocus
-                />
-                <button
-                  onClick={() => setShowQRScanner(true)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 size-12 bg-primary/10 rounded-xl flex items-center justify-center text-primary border border-primary/20 active:scale-95 transition-all"
-                >
-                  <span className="material-symbols-outlined">qr_code_scanner</span>
-                </button>
-              </div>
-
-              {errorMsg && (
-                <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 mb-6 animate-pulse">
-                  <p className="text-red-500 text-[10px] font-bold uppercase tracking-widest text-center">{errorMsg}</p>
+                <div className="relative group mb-8">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={4}
+                    value={joinCode}
+                    onChange={(e) => setJoinCode(e.target.value.replace(/\D/g, ''))}
+                    placeholder="0000"
+                    id="join-code-input"
+                    className="w-full h-20 bg-white/5 border border-white/10 rounded-2xl text-center text-4xl font-black tracking-[0.5em] text-primary focus:border-primary/50 focus:ring-0 transition-all placeholder:opacity-10"
+                    autoFocus
+                  />
+                  <button
+                    onClick={() => setShowQRScanner(true)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 size-12 bg-primary/10 rounded-xl flex items-center justify-center text-primary border border-primary/20 active:scale-95 transition-all"
+                  >
+                    <span className="material-symbols-outlined">qr_code_scanner</span>
+                  </button>
                 </div>
-              )}
 
-              <div className="flex flex-col gap-3">
-                <button
-                  onClick={handleJoinByCode}
-                  disabled={isJoining || joinCode.length < 4}
-                  className="w-full h-16 bg-primary text-white font-black rounded-2xl shadow-xl shadow-primary/20 flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95 transition-all italic"
-                >
-                  {isJoining ? (
-                    <div className="size-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                  ) : (
-                    <>
-                      <span className="material-symbols-outlined">login</span>
-                      ENTRAR AGORA
-                    </>
-                  )}
-                </button>
-                <button
-                  onClick={() => { setShowJoinModal(false); setJoinCode(''); }}
-                  className="w-full h-16 bg-white/5 text-white/40 font-black rounded-2xl hover:bg-white/10 transition-colors"
-                >
-                  CANCELAR
-                </button>
+                {errorMsg && (
+                  <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 mb-6 animate-pulse">
+                    <p className="text-red-500 text-[10px] font-bold uppercase tracking-widest text-center">{errorMsg}</p>
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-3">
+                  <button
+                    onClick={handleJoinByCode}
+                    disabled={isJoining || joinCode.length < 4}
+                    className="w-full h-16 bg-primary text-white font-black rounded-2xl shadow-xl shadow-primary/20 flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95 transition-all italic"
+                  >
+                    {isJoining ? (
+                      <div className="size-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    ) : (
+                      <>
+                        <span className="material-symbols-outlined">login</span>
+                        ENTRAR AGORA
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => { setShowJoinModal(false); setJoinCode(''); }}
+                    className="w-full h-16 bg-white/5 text-white/40 font-black rounded-2xl hover:bg-white/10 transition-colors"
+                  >
+                    CANCELAR
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )
+        }
 
-        {showQRScanner && (
-          <QRScanner
-            onScan={handleQRScan}
-            onClose={() => setShowQRScanner(false)}
-          />
-        )}
+        {
+          showQRScanner && (
+            <QRScanner
+              onScan={handleQRScan}
+              onClose={() => setShowQRScanner(false)}
+            />
+          )
+        }
 
         <section>
           <h3 className="text-sm font-black text-white/40 uppercase tracking-widest mb-4">Histórico de Mesas</h3>
@@ -511,17 +507,19 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
           </div>
         </section>
 
-        {hasActiveRoom && (
-          <button
-            onClick={handleForceExit}
-            className="w-full py-4 text-white/30 text-[10px] font-black uppercase tracking-widest border border-white/5 rounded-2xl hover:bg-white/5 transition-colors"
-          >
-            Problemas com a mesa? Sair agora
-          </button>
-        )}
-      </main>
+        {
+          hasActiveRoom && (
+            <button
+              onClick={handleForceExit}
+              className="w-full py-4 text-white/30 text-[10px] font-black uppercase tracking-widest border border-white/5 rounded-2xl hover:bg-white/5 transition-colors"
+            >
+              Problemas com a mesa? Sair agora
+            </button>
+          )
+        }
+      </main >
 
-      <nav className="fixed bottom-0 left-0 right-0 bg-background-dark/95 backdrop-blur-xl border-t border-white/5 flex items-center justify-around py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] px-6 z-50">
+      <nav className="fixed bottom-0 left-0 right-0 bg-background-dark/95 backdrop-blur-xl border-t border-white/5 flex items-center justify-around py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] px-2 z-50">
         <button onClick={() => onNavigate('home')} className="flex flex-col items-center gap-1 text-primary">
           <span className="material-symbols-outlined fill-1">home</span>
           <span className="text-[10px] font-bold">Início</span>
@@ -534,6 +532,12 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
           <span className="material-symbols-outlined">group</span>
           <span className="text-[10px] font-bold">Social</span>
         </button>
+        {useUserStore.getState().isMaster && (
+          <button onClick={() => onNavigate('master_hub')} className="flex flex-col items-center gap-1 text-yellow-500 animate-pulse">
+            <span className="material-symbols-outlined">construction</span>
+            <span className="text-[10px] font-bold">Admin</span>
+          </button>
+        )}
         <button onClick={() => onNavigate('store')} className="flex flex-col items-center gap-1 text-white/40">
           <span className="material-symbols-outlined">storefront</span>
           <span className="text-[10px] font-bold">Loja</span>
@@ -543,6 +547,6 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
           <span className="text-[10px] font-bold">Perfil</span>
         </button>
       </nav>
-    </div>
+    </div >
   );
 };

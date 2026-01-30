@@ -11,6 +11,7 @@ import { setNoResume, clearBingolaLocalState } from '../state/persist';
 import { useChatStore } from '../state/chatStore';
 import { useFriendshipStore } from '../state/friendshipStore';
 import { FloatingChat } from '../components/FloatingChat';
+import { triggerWinCelebration, triggerLoseSound } from '../lib/celebrationService';
 
 interface Props {
   roomInfo: any;
@@ -342,6 +343,9 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
     if (!roomId) return;
     const channel = supabase.channel(`room_events:${roomId}`)
       .on('broadcast', { event: 'winner' }, (payload) => {
+        console.log('[Winner Broadcast] Received:', payload.payload);
+        console.log('[Winner Broadcast] Current User ID:', currentUserId);
+
         setWinnerAnnouncement(payload.payload);
         setIsPaused(true);
         setClaimedPrizes(prev => {
@@ -353,6 +357,22 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
         });
         localStorage.setItem('bingola_is_paused', 'true');
         localStorage.setItem('bingola_last_winner', JSON.stringify(payload.payload));
+
+        // CELEBRATION: Trigger win/lose effects
+        setTimeout(() => {
+          if (!currentUserId) {
+            console.warn('[Celebration] SKIPPED: currentUserId is null!');
+            return;
+          }
+
+          if (payload.payload.winner_id === currentUserId) {
+            console.log('[Celebration] YOU WON! Triggering confetti...');
+            triggerWinCelebration();
+          } else {
+            console.log('[Celebration] Someone else won. Playing lose sound...');
+            triggerLoseSound();
+          }
+        }, 300);
       })
       .on('broadcast', { event: 'resume' }, () => {
         setWinnerAnnouncement(null);
@@ -388,10 +408,10 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
 
     if (lastAudioNumRef.current !== currentNum) {
       lastAudioNumRef.current = currentNum;
-      playSfx('drop');
+      // REMOVED: playSfx('drop') - User requested no sound during draws
       speakBingoNumber(currentNum, isNarrationMuted, selectedVoice);
     }
-  }, [drawnNumbers.length, isPaused, playSfx, isNarrationMuted, selectedVoice]);
+  }, [drawnNumbers.length, isPaused, isNarrationMuted, selectedVoice]);
 
   // Sync timer with Server Timestamp
   useEffect(() => {
@@ -608,6 +628,12 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
     setIsPaused(true);
     localStorage.setItem('bingola_is_paused', 'true');
     localStorage.setItem('bingola_last_winner', JSON.stringify(winData));
+
+    // CELEBRATION: Trigger for the winner (YOU!)
+    setTimeout(() => {
+      console.log('[Celebration] LOCAL WIN! Triggering confetti...');
+      triggerWinCelebration();
+    }, 300);
   };
 
   const togglePause = () => {

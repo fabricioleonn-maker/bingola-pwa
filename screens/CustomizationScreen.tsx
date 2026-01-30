@@ -1,5 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
+import { useUserStore } from '../state/userStore';
+import { useNotificationStore } from '../state/notificationStore';
+import { SubscriptionModal } from '../components/SubscriptionModal';
 
 interface Props {
   onBack: () => void;
@@ -8,6 +11,10 @@ interface Props {
 type TabType = 'cores' | 'fontes' | 'icones';
 
 export const CustomizationScreen: React.FC<Props> = ({ onBack }) => {
+  const { isPremium } = useUserStore();
+  const { show } = useNotificationStore();
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+
   const [activeTab, setActiveTab] = useState<TabType>('cores');
   const [selectedTheme, setSelectedTheme] = useState('classic');
   const [markedNumbers, setMarkedNumbers] = useState<number[]>([21, 25]);
@@ -26,10 +33,40 @@ export const CustomizationScreen: React.FC<Props> = ({ onBack }) => {
   ];
 
   const themes = [
-    { id: 'classic', name: 'Original', desc: 'Design moderno e limpo', img: 'https://images.unsplash.com/photo-1516321497487-e288fb19713f?q=80&w=300&auto=format&fit=crop' },
-    { id: 'retro', name: 'Retrô Cassino', desc: 'O clássico inesquecível', img: '/themes/retro.jpg' },
-    { id: 'neon', name: 'Vegas Neon', desc: 'Alta voltagem e brilho', img: '/themes/vegas.jpg' },
-    { id: 'minimal', name: 'Minimalista', desc: 'Foco nos números', img: 'https://images.unsplash.com/photo-1595769816263-9b910be24d5f?q=80&w=300&auto=format&fit=crop' }
+    { id: 'classic', name: 'Original', desc: 'Design moderno e limpo', icon: 'grid_view', premium: false },
+    { id: 'retro', name: 'Retrô Cassino', desc: 'O clássico inesquecível', icon: 'casino', premium: true },
+    { id: 'neon', name: 'Vegas Neon', desc: 'Alta voltagem e brilho', icon: 'bolt', premium: true },
+    { id: 'minimal', name: 'Minimalista', desc: 'Foco nos números', icon: 'crop_square', premium: true }
+  ];
+
+  const fonts = [
+    { id: 'classic', name: 'Clássico', font: 'font-bold', premium: false },
+    { id: 'serif', name: 'Elegante', font: 'font-serif italic', premium: true },
+    { id: 'modern', name: 'Moderno', font: 'font-mono tracking-tighter', premium: true },
+    { id: 'gamer', name: 'Gamer Pop', font: 'font-gamer text-2xl tracking-widest', premium: true },
+    { id: 'future', name: 'Futurista', font: 'font-modernPro', premium: true },
+    { id: 'college', name: 'Vintage', font: 'font-college', premium: true },
+    { id: 'hand', name: 'Manuscrito', font: 'font-handwriting text-2xl lowercase', premium: true }
+  ];
+
+  const icons = [
+    { id: 'close', name: 'X', icon: 'close', premium: false },
+    { id: 'check', name: 'Check', icon: 'check_circle', premium: true },
+    { id: 'square', name: 'Quadrado', icon: 'crop_square', premium: true },
+    { id: 'circle', name: 'Círculo', icon: 'circle', premium: true },
+    { id: 'stars', name: 'Estrela', icon: 'stars', premium: true },
+    { id: 'favorite', name: 'Coração', icon: 'favorite', premium: true },
+    { id: 'pets', name: 'Patinha', icon: 'pets', premium: true },
+    { id: 'blur', name: 'Névoa', icon: 'blur_on', premium: true },
+
+    // Novas opções atrativas
+    { id: 'car', name: 'Carrinho', icon: 'directions_car', premium: true },
+    { id: 'smile', name: 'Carinha', icon: 'mood', premium: true },
+    { id: 'rocket', name: 'Foguete', icon: 'rocket_launch', premium: true },
+    { id: 'trophy', name: 'Troféu', icon: 'emoji_events', premium: true },
+    { id: 'crown', name: 'Coroa', icon: 'crown', premium: true },
+    { id: 'diamond', name: 'Diamante', icon: 'diamond', premium: true },
+    { id: 'bolt', name: 'Raio', icon: 'bolt', premium: true }
   ];
 
   useEffect(() => {
@@ -50,6 +87,16 @@ export const CustomizationScreen: React.FC<Props> = ({ onBack }) => {
     onBack();
   };
 
+  const handleSelect = (item: any, type: 'theme' | 'font' | 'icon') => {
+    if (item.premium && !isPremium) {
+      setShowSubscriptionModal(true);
+      return;
+    }
+    if (type === 'theme') setSelectedTheme(item.id);
+    if (type === 'font') setNumberStyle(item.id);
+    if (type === 'icon') setStampIcon(item.icon);
+  };
+
   const getPreviewStyles = () => {
     switch (selectedTheme) {
       case 'retro': return { cardBg: 'bg-[#f0e6d2]', cellBg: 'bg-white', textColor: 'text-[#4a3a2a]', border: 'border-[#d6ccb8]' };
@@ -63,6 +110,8 @@ export const CustomizationScreen: React.FC<Props> = ({ onBack }) => {
 
   return (
     <div className="flex flex-col min-h-screen bg-background-dark font-display text-white">
+      <SubscriptionModal isOpen={showSubscriptionModal} onClose={() => setShowSubscriptionModal(false)} />
+
       <header className="sticky top-0 z-50 flex items-center bg-background-dark/95 backdrop-blur-md p-4 border-b border-white/5 justify-between">
         <button onClick={onBack} className="text-white flex size-12 items-center justify-start">
           <span className="material-symbols-outlined">arrow_back_ios_new</span>
@@ -73,17 +122,23 @@ export const CustomizationScreen: React.FC<Props> = ({ onBack }) => {
 
       <main className="flex-1 overflow-y-auto pb-40">
         <div className="pt-6">
-          <div className="flex overflow-x-auto no-scrollbar gap-4 px-6 pb-6">
+          <h3 className="px-6 text-xs font-bold text-white/40 uppercase mb-4 tracking-widest">Temas</h3>
+          <div className="grid grid-cols-2 gap-4 px-6 pb-6">
             {themes.map((t) => (
               <button
                 key={t.id}
-                onClick={() => setSelectedTheme(t.id)}
-                className={`flex-none w-56 relative rounded-3xl overflow-hidden aspect-[3/4] border-4 transition-all ${selectedTheme === t.id ? 'border-primary scale-100 opacity-100 shadow-xl' : 'border-white/5 scale-95 opacity-50'}`}
+                onClick={() => handleSelect(t, 'theme')}
+                className={`p-4 rounded-3xl border-2 transition-all flex flex-col items-center justify-center gap-2 relative ${selectedTheme === t.id ? 'border-primary bg-primary/20 text-white' : 'border-white/5 bg-white/5 text-white/40 hover:bg-white/10'}`}
               >
-                <img src={t.img} className="absolute inset-0 w-full h-full object-cover" alt={t.name} />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div>
-                <div className="absolute bottom-0 left-0 right-0 p-5 text-left">
-                  <h4 className="font-black text-base italic">{t.name}</h4>
+                {t.premium && !isPremium && (
+                  <div className="absolute top-2 right-2 text-primary">
+                    <span className="material-symbols-outlined text-sm">lock</span>
+                  </div>
+                )}
+                <span className="material-symbols-outlined text-3xl mb-1">{t.icon}</span>
+                <div className="text-center">
+                  <h4 className="font-black text-xs uppercase tracking-wider">{t.name}</h4>
+                  <p className="text-[9px] font-medium opacity-60 leading-tight mt-1">{t.desc}</p>
                 </div>
               </button>
             ))}
@@ -104,7 +159,16 @@ export const CustomizationScreen: React.FC<Props> = ({ onBack }) => {
                       <span className="text-[7px] text-primary font-black uppercase">LIVRE</span>
                     </div>
                   ) : (
-                    <span className={`${numberStyle === 'modern' ? 'font-mono' : numberStyle === 'serif' ? 'font-serif' : 'font-bold'}`}>{cell}</span>
+                    <span className={`${{
+                        classic: 'font-bold',
+                        serif: 'font-serif',
+                        modern: 'font-mono',
+                        gamer: 'font-gamer',
+                        future: 'font-modernPro',
+                        college: 'font-college',
+                        hand: 'font-handwriting'
+                      }[numberStyle] || 'font-bold'
+                      }`}>{cell}</span>
                   )}
                   {markedNumbers.includes(cell) && cell !== 0 && (
                     <div className="absolute inset-0 flex items-center justify-center" style={{ opacity: opacity / 100 }}>
@@ -159,24 +223,33 @@ export const CustomizationScreen: React.FC<Props> = ({ onBack }) => {
                 </div>
               </div>
             )}
+
             {activeTab === 'fontes' && (
               <div className="space-y-3">
-                {[
-                  { id: 'classic', name: 'Clássico', font: 'font-bold' },
-                  { id: 'serif', name: 'Elegante', font: 'font-serif italic' }
-                ].map((f) => (
-                  <button key={f.id} onClick={() => setNumberStyle(f.id)} className={`w-full p-6 rounded-2xl border-2 flex justify-between items-center transition-all ${numberStyle === f.id ? 'border-primary bg-primary/10' : 'border-white/5 bg-white/5'}`}>
+                {fonts.map((f) => (
+                  <button key={f.id} onClick={() => handleSelect(f, 'font')} className={`w-full p-6 rounded-2xl border-2 flex justify-between items-center transition-all relative ${numberStyle === f.id ? 'border-primary bg-primary/10' : 'border-white/5 bg-white/5'}`}>
+                    {f.premium && !isPremium && (
+                      <div className="absolute top-1/2 -translate-y-1/2 right-4 text-primary">
+                        <span className="material-symbols-outlined text-xl">lock</span>
+                      </div>
+                    )}
                     <span className="font-bold text-sm">{f.name}</span>
-                    <span className={`text-2xl ${f.font} text-primary`}>42</span>
+                    <span className={`text-2xl ${f.font} text-primary ${f.premium && !isPremium ? 'opacity-30 blur-[2px]' : ''}`}>42</span>
                   </button>
                 ))}
               </div>
             )}
+
             {activeTab === 'icones' && (
               <div className="grid grid-cols-4 gap-4">
-                {['stars', 'favorite', 'blur_on', 'check_circle', 'circle', 'square', 'close', 'pets'].map((icon) => (
-                  <button key={icon} onClick={() => setStampIcon(icon)} className={`aspect-square rounded-2xl flex items-center justify-center transition-all ${stampIcon === icon ? 'bg-primary/20 ring-2 ring-primary' : 'bg-white/5 opacity-40'}`}>
-                    <span className="material-symbols-outlined text-4xl">{icon}</span>
+                {icons.map((item) => (
+                  <button key={item.id} onClick={() => handleSelect(item, 'icon')} className={`aspect-square rounded-2xl flex items-center justify-center transition-all relative ${stampIcon === item.icon ? 'bg-primary/20 ring-2 ring-primary' : 'bg-white/5 opacity-40'}`}>
+                    {item.premium && !isPremium && (
+                      <div className="absolute top-1 right-1 text-primary">
+                        <span className="material-symbols-outlined text-[10px]">lock</span>
+                      </div>
+                    )}
+                    <span className="material-symbols-outlined text-3xl">{item.icon}</span>
                   </button>
                 ))}
               </div>
