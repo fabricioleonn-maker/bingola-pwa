@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAudioStore } from '../state/audioStore';
+import { useNotificationStore } from '../state/notificationStore';
 
 interface LoginProps {
   onLogin: () => void;
@@ -126,8 +127,58 @@ export const LoginScreen: React.FC<LoginProps> = ({ onLogin, onGoToRegister }) =
                 </button>
               </div>
               <div className="flex justify-end pr-1">
-                <button type="button" className="text-xs font-bold text-[#a855f7] hover:text-[#d946ef] transition-colors">
-                  Esqueceu a senha?
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={async () => {
+                    if (!email) {
+                      setErrorMsg('Digite seu e-mail para recuperar a senha.');
+                      return;
+                    }
+                    setLoading(true);
+                    setErrorMsg(null);
+                    try {
+                      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                        redirectTo: `${window.location.origin}/`,
+                      });
+
+                      if (error) {
+                        const lowMsg = error.message.toLowerCase();
+                        let msg = error.message;
+
+                        if (lowMsg.includes('rate limit') || lowMsg.includes('seconds')) {
+                          const secondsMatch = error.message.match(/\d+/);
+                          const seconds = secondsMatch ? secondsMatch[0] : 'alguns';
+                          msg = `Aguarde ${seconds} segundos antes de solicitar um novo e-mail.`;
+                        } else if (lowMsg.includes('recovery')) {
+                          msg = 'Erro ao enviar e-mail de recuperação. Verifique o endereço e tente novamente.';
+                        }
+
+                        setErrorMsg(msg);
+                        useNotificationStore.getState().show(msg, 'error');
+                      } else {
+                        setErrorMsg(null);
+                        useNotificationStore.getState().show('E-mail de recuperação enviado com sucesso!', 'success');
+                      }
+                    } catch (err: any) {
+                      const lowMsg = (err.message || '').toLowerCase();
+                      let msg = err.message || 'Erro ao enviar e-mail de recuperação';
+
+                      if (lowMsg.includes('rate limit') || lowMsg.includes('seconds')) {
+                        const secondsMatch = msg.match(/\d+/);
+                        const seconds = secondsMatch ? secondsMatch[0] : 'alguns';
+                        msg = `Aguarde ${seconds} segundos antes de tentar novamente.`;
+                      }
+
+                      setErrorMsg(msg);
+                      useNotificationStore.getState().show(msg, 'error');
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                  className="text-xs font-bold text-[#a855f7] hover:text-[#d946ef] transition-colors disabled:opacity-50"
+                >
+                  {loading ? 'Enviando...' : 'Esqueceu a senha?'}
                 </button>
               </div>
             </div>

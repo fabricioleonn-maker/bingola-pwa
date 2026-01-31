@@ -1,8 +1,8 @@
 [
   {
     "id": "TC001",
-    "title": "User Registration with Valid Email and Password",
-    "description": "Verify that a new user can successfully register with a valid email and password.",
+    "title": "User Registration with Valid Data",
+    "description": "Verify that a new user can successfully register with valid input data including username, email, and password.",
     "category": "functional",
     "priority": "High",
     "steps": [
@@ -12,47 +12,72 @@
       },
       {
         "type": "action",
-        "description": "Input valid email and strong password"
+        "description": "Input valid username, valid email, and strong password"
       },
       {
         "type": "action",
-        "description": "Submit registration form"
+        "description": "Submit the registration form"
       },
       {
         "type": "assertion",
-        "description": "Verify registration is successful and user receives confirmation"
+        "description": "Verify registration success message and automatic login or redirect to login page"
       }
     ]
   },
   {
     "id": "TC002",
-    "title": "User Login with Correct Credentials",
-    "description": "Check that user can login successfully using a valid email and password combination.",
-    "category": "functional",
+    "title": "User Registration with Invalid Email",
+    "description": "Check that registration fails with an invalid email format and appropriate error message is shown.",
+    "category": "error handling",
     "priority": "High",
     "steps": [
       {
         "type": "action",
-        "description": "Navigate to login page"
+        "description": "Navigate to registration page"
       },
       {
         "type": "action",
-        "description": "Input correct email and password"
+        "description": "Input valid username, invalid email format, and strong password"
       },
       {
         "type": "action",
-        "description": "Click on login button"
+        "description": "Submit the registration form"
       },
       {
         "type": "assertion",
-        "description": "Verify user is logged in and redirected to main dashboard"
+        "description": "Verify error message indicating invalid email address"
       }
     ]
   },
   {
     "id": "TC003",
-    "title": "Login Failure with Incorrect Credentials",
-    "description": "Verify that login fails with invalid email or password and appropriate error message is shown.",
+    "title": "User Login with Correct Credentials",
+    "description": "Verify that a registered user can successfully login with correct email and password.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to login page"
+      },
+      {
+        "type": "action",
+        "description": "Enter registered email and correct password"
+      },
+      {
+        "type": "action",
+        "description": "Click login button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify user is logged in and redirected to HomeScreen"
+      }
+    ]
+  },
+  {
+    "id": "TC004",
+    "title": "User Login with Incorrect Password",
+    "description": "Ensure that login fails when a registered email is used with incorrect password, showing correct error message.",
     "category": "error handling",
     "priority": "High",
     "steps": [
@@ -62,421 +87,604 @@
       },
       {
         "type": "action",
-        "description": "Input invalid email or incorrect password"
+        "description": "Enter registered email and incorrect password"
       },
       {
         "type": "action",
-        "description": "Attempt to login"
+        "description": "Click login button"
       },
       {
         "type": "assertion",
-        "description": "Verify login is blocked and error message is displayed"
-      }
-    ]
-  },
-  {
-    "id": "TC004",
-    "title": "Profile Customization - Update Avatar and Display Name",
-    "description": "Check that users can update their profile avatar and display name successfully.",
-    "category": "functional",
-    "priority": "Medium",
-    "steps": [
-      {
-        "type": "action",
-        "description": "Login and navigate to profile settings"
-      },
-      {
-        "type": "action",
-        "description": "Change avatar image from available selections"
-      },
-      {
-        "type": "action",
-        "description": "Edit display name field"
-      },
-      {
-        "type": "action",
-        "description": "Save changes"
-      },
-      {
-        "type": "assertion",
-        "description": "Verify profile updates are reflected in user interface"
+        "description": "Verify error message about incorrect credentials"
       }
     ]
   },
   {
     "id": "TC005",
-    "title": "Interactive Tutorial Completion",
-    "description": "Validate the tutorial guides new users through game basics and completes without errors.",
+    "title": "Password Recovery with Registered Email",
+    "description": "Verify password recovery process initiates successfully for a registered email address.",
     "category": "functional",
-    "priority": "Medium",
+    "priority": "High",
     "steps": [
       {
         "type": "action",
-        "description": "Login as new user and start interactive tutorial"
+        "description": "Navigate to password recovery screen"
       },
       {
         "type": "action",
-        "description": "Follow all tutorial steps including game play instructions"
+        "description": "Input registered email address"
+      },
+      {
+        "type": "action",
+        "description": "Submit password recovery request"
       },
       {
         "type": "assertion",
-        "description": "Verify tutorial completes with success message and user can proceed to bingo rooms"
+        "description": "Confirm that password recovery email or instructions are sent/indicated"
       }
     ]
   },
   {
     "id": "TC006",
-    "title": "Host Creates Bingo Room with Custom Settings",
-    "description": "Verify that a host can create a bingo room with specified rules, prizes, and configuration settings.",
+    "title": "Profile Update: Avatar Upload and Stats Display",
+    "description": "Ensure user can upload avatar image, and profile displays level, BPoints, BCoins, and statistics correctly.",
     "category": "functional",
-    "priority": "High",
+    "priority": "Medium",
     "steps": [
       {
         "type": "action",
-        "description": "Login as Host and open HostDashboard"
+        "description": "Navigate to Profile screen"
       },
       {
         "type": "action",
-        "description": "Navigate to create new bingo room"
-      },
-      {
-        "type": "action",
-        "description": "Configure room settings including prize, max players, and game rules"
-      },
-      {
-        "type": "action",
-        "description": "Submit the form to create the room"
+        "description": "Upload a valid avatar image"
       },
       {
         "type": "assertion",
-        "description": "Verify new bingo room is listed and accessible with correct settings"
+        "description": "Verify avatar updates and persists"
+      },
+      {
+        "type": "assertion",
+        "description": "Check display correctness of user level, BPoints, BCoins, and statistics"
       }
     ]
   },
   {
     "id": "TC007",
-    "title": "Host Approves and Denies Players in Lobby",
-    "description": "Check that host can view pending player requests and approve or deny entry into the room.",
+    "title": "Game Room Creation with Custom Settings",
+    "description": "Test host can create a bingo game room configuring prize type and draw intervals successfully.",
     "category": "functional",
     "priority": "High",
     "steps": [
       {
         "type": "action",
-        "description": "Host navigates to LobbyScreen for a bingo room"
+        "description": "Login as host and go to HostDashboard"
       },
       {
         "type": "action",
-        "description": "View list of players requesting to join"
+        "description": "Open room creation form"
       },
       {
         "type": "action",
-        "description": "Approve some players and deny others"
+        "description": "Configure prize type, draw intervals, and required settings"
+      },
+      {
+        "type": "action",
+        "description": "Submit to create room"
       },
       {
         "type": "assertion",
-        "description": "Verify approved players enter ParticipantLobby, denied players receive notification"
+        "description": "Verify room is created and appears in host's active rooms list"
       }
     ]
   },
   {
     "id": "TC008",
-    "title": "Synchronized Bingo Number Drawing",
-    "description": "Verify that the bingo numbers are drawn centrally and synchronized in real-time to all connected players with voice narration.",
+    "title": "Player Join Room Using Valid Room Code",
+    "description": "Verify a player can join a game room successfully using a valid room code and receives real-time game state synchronization.",
     "category": "functional",
     "priority": "High",
     "steps": [
       {
         "type": "action",
-        "description": "Host starts number drawing in an active bingo room"
+        "description": "Login as player"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to HomeScreen and enter valid room code"
       },
       {
         "type": "assertion",
-        "description": "Confirm all players receive the same drawn number simultaneously"
+        "description": "Verify player is admitted to ParticipantLobby"
       },
       {
         "type": "assertion",
-        "description": "Verify voice narration announces each drawn number accurately and promptly"
+        "description": "Verify real-time game state and player status synchronization begins"
       }
     ]
   },
   {
     "id": "TC009",
-    "title": "Player Marks Bingo Card and Claims BINGO",
-    "description": "Confirm player can mark numbers on their card and successfully claim BINGO, triggering victory animations and rewards.",
-    "category": "functional",
+    "title": "Player Join Room with Invalid Room Code",
+    "description": "Check proper error handling when a player tries to join with an invalid or non-existent room code.",
+    "category": "error handling",
     "priority": "High",
     "steps": [
       {
         "type": "action",
-        "description": "Player marks numbers as they are drawn"
+        "description": "Login as player"
       },
       {
         "type": "action",
-        "description": "Player claims BINGO when conditions are met"
+        "description": "Navigate to HomeScreen and input invalid room code"
+      },
+      {
+        "type": "action",
+        "description": "Attempt to join room"
       },
       {
         "type": "assertion",
-        "description": "Validate victory animations and sound effects display"
-      },
-      {
-        "type": "assertion",
-        "description": "Verify player receives correct BPoints/BCoins reward"
+        "description": "Verify error message indicating invalid or unavailable room code"
       }
     ]
   },
   {
     "id": "TC010",
-    "title": "Victory Celebration Animations and Sound Effects",
-    "description": "Check that celebratory animations and sounds simultaneously play for winners across all clients.",
+    "title": "Dynamic Bingo Card Generation and Marking",
+    "description": "Verify that bingo cards are dynamically generated for each player and marking numbers manually or assisted works correctly.",
     "category": "functional",
-    "priority": "Medium",
+    "priority": "High",
     "steps": [
       {
         "type": "action",
-        "description": "Simulate a player winning a bingo round"
+        "description": "Enter game screen in an active game"
       },
       {
         "type": "assertion",
-        "description": "Verify all connected clients display victory animations and hear sound effects in sync"
+        "description": "Verify generated bingo card is valid and unique per player"
+      },
+      {
+        "type": "action",
+        "description": "Manually mark a number on the bingo card"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the mark is registered visually and logically"
+      },
+      {
+        "type": "action",
+        "description": "Use assisted marking feature for a called number"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the number is marked automatically"
       }
     ]
   },
   {
     "id": "TC011",
-    "title": "Real-time Room Chat with Emojis",
-    "description": "Verify users can send and receive messages instantly in room chats including use of emojis.",
+    "title": "Host Controls Real-Time Draw Management",
+    "description": "Test that the host can control draw pace with Play/Pause and that all players receive synchronized draw updates with celebration animations and sound.",
     "category": "functional",
     "priority": "High",
     "steps": [
       {
         "type": "action",
-        "description": "Join a bingo room and open room chat"
+        "description": "Login as host and start a game"
       },
       {
         "type": "action",
-        "description": "Send a text message including emojis"
+        "description": "Trigger draw to call next bingo number"
       },
       {
         "type": "assertion",
-        "description": "Verify all participants see the message immediately with emojis rendered correctly"
+        "description": "Verify number is broadcasted and updated in real-time to all players"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify celebration animations and sound effects upon winner declaration"
+      },
+      {
+        "type": "action",
+        "description": "Pause the draw"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify draw pauses and no new numbers are called until resumed"
       }
     ]
   },
   {
     "id": "TC012",
-    "title": "Global Chat Messaging and Emoji Support",
-    "description": "Ensure users can communicate in the global chat and that emojis in messages display properly.",
+    "title": "Global and Room-Specific Chat Functionality",
+    "description": "Ensure in-game chat supports message sending and receiving globally and within specific rooms including quick messages and emoji support.",
     "category": "functional",
     "priority": "Medium",
     "steps": [
       {
         "type": "action",
-        "description": "Access global chat channel"
+        "description": "Join a game room as a player"
       },
       {
         "type": "action",
-        "description": "Send a message containing emojis"
+        "description": "Send a text message in room-specific chat"
       },
       {
         "type": "assertion",
-        "description": "Verify message delivery to all users and correct emoji display"
+        "description": "Verify message appears for all room participants immediately"
+      },
+      {
+        "type": "action",
+        "description": "Send a quick message and emoji"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify quick message and emoji are displayed correctly"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to global chat"
+      },
+      {
+        "type": "action",
+        "description": "Send a message in global chat"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify global chat message is visible to all users"
       }
     ]
   },
   {
     "id": "TC013",
-    "title": "Friend System - Send and Accept Friend Invites",
-    "description": "Test that users can send friend requests, receive them, and accept or decline via the message center.",
+    "title": "Friend Request and Invitation System",
+    "description": "Verify that users can send friend requests, receive notifications, and send invitations to join rooms using friends list with changes reflected in real-time.",
     "category": "functional",
     "priority": "Medium",
     "steps": [
       {
         "type": "action",
-        "description": "User A sends a friend invite to User B"
+        "description": "Login and navigate to friends system"
       },
       {
         "type": "action",
-        "description": "User B checks message center for invite"
-      },
-      {
-        "type": "action",
-        "description": "User B accepts the friend request"
+        "description": "Send a friend request to another user"
       },
       {
         "type": "assertion",
-        "description": "Verify both users appear in each other's friend lists"
+        "description": "Verify friend request notification is received by the other user"
+      },
+      {
+        "type": "action",
+        "description": "Accept friend request and verify friend added to list"
+      },
+      {
+        "type": "action",
+        "description": "Send a game room invitation to a friend"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify friend receives invitation notification and can join room via it"
       }
     ]
   },
   {
     "id": "TC014",
-    "title": "Global Ranking Leaderboard Accuracy",
-    "description": "Validate that the global leaderboard displays the correct player rankings based on BPoints.",
+    "title": "In-Game Store Purchase with Sufficient BCoins",
+    "description": "Ensure purchases in the store correctly deduct BCoins, grant cosmetic items/boosters, and log transactions appropriately.",
     "category": "functional",
-    "priority": "Medium",
+    "priority": "High",
     "steps": [
       {
         "type": "action",
-        "description": "Open global ranking leaderboard"
+        "description": "Navigate to the in-game store"
+      },
+      {
+        "type": "action",
+        "description": "Select an item costing less than current BCoins balance"
+      },
+      {
+        "type": "action",
+        "description": "Complete purchase"
       },
       {
         "type": "assertion",
-        "description": "Check leaderboard player stats and rankings match backend data"
+        "description": "Verify BCoins balance is reduced accordingly"
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm item granted and added to user's inventory"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify transaction is logged in system"
       }
     ]
   },
   {
     "id": "TC015",
-    "title": "Store Purchase with BPoints and BCoins",
-    "description": "Verify users can purchase cosmetic items and boosters using BPoints and BCoins with correct balance deduction and item application.",
-    "category": "functional",
+    "title": "In-Game Store Purchase with Insufficient BCoins",
+    "description": "Check the store prevents purchases when user has insufficient BCoins and displays proper error message.",
+    "category": "error handling",
     "priority": "High",
     "steps": [
       {
         "type": "action",
-        "description": "Navigate to virtual store"
+        "description": "Navigate to in-game store"
       },
       {
         "type": "action",
-        "description": "Select item requiring BPoints and confirm purchase"
-      },
-      {
-        "type": "assertion",
-        "description": "Verify BPoints are deducted accordingly and item is added to user's inventory"
+        "description": "Select item costing more than current BCoins"
       },
       {
         "type": "action",
-        "description": "Select item requiring BCoins and confirm purchase"
+        "description": "Attempt to complete purchase"
       },
       {
         "type": "assertion",
-        "description": "Verify BCoins are deducted correctly and item applies visually if cosmetic"
+        "description": "Verify purchase is blocked and error message about insufficient funds is shown"
       }
     ]
   },
   {
     "id": "TC016",
-    "title": "Automatic Logout Triggered After 10 Minutes Inactivity",
-    "description": "Ensure the app automatically logs out users after 10 minutes of inactivity to secure user sessions.",
-    "category": "security",
-    "priority": "High",
+    "title": "Interface Customization Options Persistence",
+    "description": "Validate that changing themes, fonts, and colors in settings updates the UI properly and persists on reload or new sessions.",
+    "category": "functional",
+    "priority": "Medium",
     "steps": [
       {
         "type": "action",
-        "description": "Login to the application"
+        "description": "Go to interface customization settings"
       },
       {
         "type": "action",
-        "description": "Remain inactive for over 10 minutes"
+        "description": "Change theme, font, and color settings"
       },
       {
         "type": "assertion",
-        "description": "Verify user is logged out automatically and redirected to login page"
+        "description": "Verify the UI updates accordingly immediately"
+      },
+      {
+        "type": "action",
+        "description": "Reload the app or logout and log back in"
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm previous interface customizations persist and are applied"
       }
     ]
   },
   {
     "id": "TC017",
-    "title": "Persistent Game State Across Page Refresh and Network Fluctuations",
-    "description": "Validate that the bingo game state remains consistent and persists when the user refreshes the page or temporarily loses network connectivity.",
-    "category": "functional",
+    "title": "Auto-Logout After Inactivity Timeout",
+    "description": "Verify that users are automatically logged out after the defined period of inactivity to preserve resources.",
+    "category": "security",
     "priority": "High",
     "steps": [
       {
         "type": "action",
-        "description": "Join active bingo round and participate"
-      },
-      {
-        "type": "action",
-        "description": "Refresh the browser page during active gameplay"
+        "description": "Login and remain inactive for inactivity timeout period"
       },
       {
         "type": "assertion",
-        "description": "Verify bingo game state is restored to the current round without resets"
+        "description": "Verify user is automatically logged out and redirected to login screen"
       },
       {
         "type": "action",
-        "description": "Simulate temporary network loss and recovery during gameplay"
+        "description": "Attempt to perform user actions after logout without re-authenticating"
       },
       {
         "type": "assertion",
-        "description": "Verify game state remains synchronized and no data loss occurs"
+        "description": "Verify actions are blocked and login screen is shown"
       }
     ]
   },
   {
     "id": "TC018",
-    "title": "Application Initial Load Performance",
-    "description": "Test that the app loads initial content and interface within 3 seconds on supported desktop and mobile devices.",
-    "category": "performance",
+    "title": "Security: Supabase RLS Policy Enforcement",
+    "description": "Ensure that Row Level Security policies restrict data access so that users can only access authorized data such as their own profile, game rooms they belong to, and permissions.",
+    "category": "security",
     "priority": "High",
     "steps": [
       {
         "type": "action",
-        "description": "Launch the app on supported device"
+        "description": "Login as user A"
+      },
+      {
+        "type": "action",
+        "description": "Attempt to access user B's profile data via API or UI"
       },
       {
         "type": "assertion",
-        "description": "Verify user interface is interactive and fully loaded within 3 seconds"
+        "description": "Verify access is denied or data is not retrievable"
+      },
+      {
+        "type": "action",
+        "description": "Attempt to join or view game rooms without membership"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify access to restricted game state is prevented"
       }
     ]
   },
   {
     "id": "TC019",
-    "title": "Accessibility - Voice Narration Functionality for Number Draws",
-    "description": "Ensure voice narration announces the bingo numbers clearly and reliably for accessibility.",
+    "title": "Real-Time Game State Synchronization Latency",
+    "description": "Verify that real-time synchronization for game draws, player status, and room states occurs within an acceptable latency threshold with no visible lag.",
     "category": "functional",
-    "priority": "Medium",
+    "priority": "High",
     "steps": [
       {
         "type": "action",
-        "description": "Start bingo number drawing in a game"
+        "description": "Host initiates a number draw"
       },
       {
         "type": "assertion",
-        "description": "Verify voice narration announces each drawn number correctly and without delay"
+        "description": "Validate that all connected players receive the update within defined latency limits (e.g., under 1 second)"
+      },
+      {
+        "type": "action",
+        "description": "Simultaneously simulate multiple player status updates"
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm all updates propagate correctly and timely across all clients"
       }
     ]
   },
   {
     "id": "TC020",
-    "title": "Error Handling - Room Creation with Invalid Settings",
-    "description": "Verify that creating a bingo room with invalid or missing required fields triggers validation errors preventing submission.",
-    "category": "error handling",
+    "title": "Admin Panel Economic Subscription Controls Verification",
+    "description": "Ensure the administrative master hub panel allows authorized admins to modify virtual economy parameters and subscription controls with changes correctly reflected in user experience.",
+    "category": "functional",
     "priority": "Medium",
     "steps": [
       {
         "type": "action",
-        "description": "Login as host and navigate to create room"
+        "description": "Login as admin user with required privileges"
       },
       {
         "type": "action",
-        "description": "Attempt to submit room creation form with empty mandatory fields or invalid values"
+        "description": "Navigate to economic and subscription controls panel"
+      },
+      {
+        "type": "action",
+        "description": "Modify virtual currency earning rates and subscription settings"
       },
       {
         "type": "assertion",
-        "description": "Verify clear validation error messages are displayed for each invalid entry"
+        "description": "Verify changes are saved and propagated correctly"
+      },
+      {
+        "type": "action",
+        "description": "Logout and login as normal user"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify updated economic/subscription parameters affect user gameplay and account correctly"
       }
     ]
   },
   {
     "id": "TC021",
-    "title": "Error Handling - Purchase Attempt with Insufficient Funds",
-    "description": "Confirm that attempting to purchase store items without sufficient BPoints or BCoins prevents purchase and shows relevant error message.",
+    "title": "Splash Screen Load and Transition to Login",
+    "description": "Verify that the SplashScreen loads correctly on app start and transitions automatically to Login/Register screen within acceptable time.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Launch the app"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify SplashScreen is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify automatic transition to Login/Register screen occurs after splash duration"
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm no freezing or long delays during transition"
+      }
+    ]
+  },
+  {
+    "id": "TC022",
+    "title": "Victory Screen Display with Celebrations and Rewards",
+    "description": "Ensure that upon winning, the player sees the Victory screen with correct celebration animations, sound effects, and rewards update.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Complete a game as a winning player"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify Victory screen appears with celebration animations and sound"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify correct rewards (BPoints, items) are credited to player account"
+      }
+    ]
+  },
+  {
+    "id": "TC023",
+    "title": "Handling Network Failures During Game Sync",
+    "description": "Simulate network interruptions and verify the app handles temporary disconnections gracefully, with attempts to resync and user notification.",
     "category": "error handling",
     "priority": "High",
     "steps": [
       {
         "type": "action",
-        "description": "Login as user with insufficient BPoints or BCoins"
+        "description": "Start an active bingo game session"
       },
       {
         "type": "action",
-        "description": "Attempt to purchase an expensive store item"
+        "description": "Simulate network failure/disconnection for a player"
       },
       {
         "type": "assertion",
-        "description": "Verify purchase is blocked and insufficient funds error message is shown"
+        "description": "Verify user is notified of connection loss"
+      },
+      {
+        "type": "action",
+        "description": "Restore network connection"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify automatic resynchronization of game state and player status"
+      }
+    ]
+  },
+  {
+    "id": "TC024",
+    "title": "Rapid Multiple Player Join and Leave Events",
+    "description": "Test the app stability and state consistency when multiple players rapidly join and leave a game room.",
+    "category": "error handling",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Create a host-controlled room"
+      },
+      {
+        "type": "action",
+        "description": "Simulate multiple players joining and leaving in rapid succession"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify room player list updates correctly and no crashes occur"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify game state synchronization remains consistent"
+      }
+    ]
+  },
+  {
+    "id": "TC025",
+    "title": "Performance: UI Responsiveness and Animation Smoothness",
+    "description": "Verify the UI is responsive, accessible, and animations (such as draw celebrations) render smoothly without lag on various device types.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Open key screens (Home, Lobby, Game, Victory) on desktop and mobile devices"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify UI elements respond promptly to user inputs"
+      },
+      {
+        "type": "assertion",
+        "description": "Observe celebration and transition animations and verify smooth frame rendering and no jank"
       }
     ]
   }

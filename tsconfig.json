@@ -25,5 +25,21 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.js",
+    "vite-env.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "android",
+    "Backup",
+    "testsprite_tests",
+    "Bingola Play Store",
+    "temp_home.tsx",
+    "temp_home2.tsx"
+  ]
 }

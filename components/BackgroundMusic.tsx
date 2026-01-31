@@ -33,7 +33,7 @@ const BackgroundMusic: React.FC<Props> = ({ currentScreen }) => {
         };
     }, []);
 
-    const isLoginFlow = currentScreen === 'login' || currentScreen === 'register' || currentScreen === 'splash';
+    const isLoginFlow = currentScreen === 'login' || currentScreen === 'register' || currentScreen === 'splash' || currentScreen === 'reset_password';
 
     // 1. Interaction Unblocker - Must be active even in login to capture the FIRST click
     useEffect(() => {
@@ -144,6 +144,16 @@ const BackgroundMusic: React.FC<Props> = ({ currentScreen }) => {
             audio.play().catch(() => { });
         }
     }, [currentGenre, currentTrackIndex, isMuted, isPlaying, isIntroPlaying, volume, isDucked, isLoginFlow, nextTrack, currentScreen, room?.status]);
+
+    // Sync volume changes to audio element in real-time
+    useEffect(() => {
+        if (audioRef.current) {
+            audioRef.current.volume = isDucked ? volume * 0.2 : volume;
+        }
+        if (introAudioRef.current) {
+            introAudioRef.current.volume = volume;
+        }
+    }, [volume, isDucked]);
 
 
     return null;

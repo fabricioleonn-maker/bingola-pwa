@@ -9,7 +9,7 @@
     "projectName": "bingola-pwa",
     "projectPath": "c:\\Projetos\\VOKE\\Bingola\\V.02bingola PWA\\bingola-pwa",
     "testIds": [],
-    "additionalInstruction": "Execute full test suite. Server is confirmed running on port 3333. Application name is Bingola.",
+    "additionalInstruction": "Validate that password reset flow completes without auto-logout and session conflicts are not falsely triggered. Ensure the Delete Account link is visible at the bottom of the Profile screen.",
     "envs": {
       "API_KEY": "sk-user-1CT5ihgsqUtsYY4UyROQiQrxdFhrrTqHXqw86iicy9JHIR47d3_Xsi9lxa7Nw6V_Ge2SKLH1nKkyT6b2Jlkfg_T_SRu2YpqZLjN9NJpho5ClkCItxm3sD7vIUTc-FJcbvsc"
     }

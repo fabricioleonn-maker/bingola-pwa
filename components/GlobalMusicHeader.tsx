@@ -29,7 +29,7 @@ const GlobalMusicHeader: React.FC<Props> = ({ currentScreen }) => {
     }, [isPlaying]);
 
     // Hide on specific screens (Always called after all hooks)
-    if (currentScreen === 'login' || currentScreen === 'register' || currentScreen === 'splash') {
+    if (currentScreen === 'login' || currentScreen === 'register' || currentScreen === 'splash' || currentScreen === 'reset_password') {
         return null;
     }
 

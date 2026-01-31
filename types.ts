@@ -46,4 +46,5 @@ export type AppScreen =
   | 'sub_admin'
   | 'player_management'
   | 'transaction_logs'
+  | 'reset_password'
   | 'edit_card';

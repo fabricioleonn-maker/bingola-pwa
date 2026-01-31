@@ -29,6 +29,12 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
   const [giftAmount, setGiftAmount] = useState('');
   const [showExtrato, setShowExtrato] = useState(false);
   const [transactions, setTransactions] = useState<any[]>([]);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPass, setShowPass] = useState(false);
+  const [showConfirmPass, setShowConfirmPass] = useState(false);
 
   const fetchProfileData = async () => {
     await refreshProfile();
@@ -163,13 +169,68 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
   };
 
   const handleChangePassword = async () => {
+    if (isChangingPassword) return;
+
     const { data: { user: authUser } } = await supabase.auth.getUser();
     if (!authUser || !profile) return;
-    const { error } = await supabase.auth.resetPasswordForEmail(authUser.email!, {
-      redirectTo: `${window.location.origin}/reset-password`,
-    });
-    if (error) useNotificationStore.getState().show(error.message, 'error');
-    else useNotificationStore.getState().show('E-mail de redefinição de senha enviado!', 'info');
+
+    setIsChangingPassword(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(authUser.email!, {
+        redirectTo: `${window.location.origin}/`,
+      });
+
+      if (error) {
+        if (error.message.toLowerCase().includes('rate limit')) {
+          useNotificationStore.getState().show(
+            'Aguarde alguns minutos antes de solicitar novo email',
+            'error'
+          );
+        } else {
+          useNotificationStore.getState().show(error.message, 'error');
+        }
+      } else {
+        useNotificationStore.getState().show(
+          'E-mail de redefinição enviado com sucesso!',
+          'success'
+        );
+      }
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
+  const handleUpdatePassword = async () => {
+    if (!newPassword || !confirmPassword) {
+      useNotificationStore.getState().show('Preencha os campos de senha', 'error');
+      return;
+    }
+    if (newPassword.length < 6) {
+      useNotificationStore.getState().show('A senha deve ter no mínimo 6 caracteres', 'error');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      useNotificationStore.getState().show('As senhas não coincidem', 'error');
+      return;
+    }
+
+    setIsChangingPassword(true);
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+
+      if (error) throw error;
+
+      useNotificationStore.getState().show('Senha alterada com sucesso!', 'success');
+      setShowPasswordModal(false);
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err: any) {
+      useNotificationStore.getState().show(err.message, 'error');
+    } finally {
+      setIsChangingPassword(false);
+    }
   };
 
   const handleDeleteAccount = async () => {
@@ -526,7 +587,7 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
           <h3 className="text-[10px] font-black uppercase tracking-widest text-white/30 px-1">Segurança e Dados</h3>
 
           <button
-            onClick={handleChangePassword}
+            onClick={() => setShowPasswordModal(true)}
             className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-between active:scale-95 transition-all"
           >
             <div className="flex items-center gap-4">
@@ -535,18 +596,13 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
               </div>
               <div className="text-left">
                 <p className="font-bold text-sm">Alterar Senha</p>
-                <p className="text-[10px] text-white/40">Enviar link de redefinição para e-mail</p>
+                <p className="text-[10px] text-white/40">Definir nova senha agora</p>
               </div>
             </div>
             <span className="material-symbols-outlined text-white/20">chevron_right</span>
           </button>
 
-          <button
-            onClick={handleDeleteAccount}
-            className="w-full bg-transparent border-0 p-2 flex items-center justify-center active:scale-95 transition-all"
-          >
-            <p className="text-red-500 text-xs font-medium hover:underline">Excluir minha conta</p>
-          </button>
+
 
           <button
             id="personalize-btn"
@@ -565,11 +621,38 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
             <span className="material-symbols-outlined text-white/20">chevron_right</span>
           </button>
 
-          <h3 className="text-[10px] font-black uppercase tracking-widest text-white/30 px-1 pt-4">Legal</h3>
+          <h3 className="text-[10px] font-black uppercase tracking-widest text-white/30 px-1 pt-4">Termos e Legal</h3>
+
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <a
+              href="/legal/privacy-policy.html"
+              target="_blank"
+              className="bg-white/5 border border-white/10 rounded-2xl p-3 text-center active:scale-95 transition-all"
+            >
+              <p className="text-[10px] font-black uppercase tracking-widest text-white/60">Privacidade</p>
+            </a>
+            <a
+              href="/legal/terms-of-service.html"
+              target="_blank"
+              className="bg-white/5 border border-white/10 rounded-2xl p-3 text-center active:scale-95 transition-all"
+            >
+              <p className="text-[10px] font-black uppercase tracking-widest text-white/60">Termos</p>
+            </a>
+          </div>
 
           <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-[10px] text-white/40 font-bold uppercase text-center leading-relaxed">
             Bingola BETA - 2026<br />
-            VOKE - Todos os direitos reservados
+            Voke Games - Todos os direitos reservados
+          </div>
+
+          <div className="pt-8 pb-4 flex flex-col items-center">
+            <button
+              onClick={handleDeleteAccount}
+              className="group flex flex-col items-center gap-1 opacity-40 hover:opacity-100 transition-opacity"
+            >
+              <span className="text-xs font-bold text-red-500/80 group-hover:text-red-500">Excluir conta</span>
+              <span className="text-[9px] font-black uppercase tracking-widest text-red-500/40">Ação Irreversível</span>
+            </button>
           </div>
         </div>
       </main>
@@ -596,6 +679,97 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
           <span className="text-[10px] font-bold">Perfil</span>
         </button>
       </nav>
+
+      {/* Password Change Modal */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 z-[400] bg-background-dark/95 backdrop-blur-xl flex flex-col animate-in fade-in duration-300">
+          <header
+            style={{ paddingTop: 'env(safe-area-inset-top)' }}
+            className="p-4 border-b border-white/5 flex items-center justify-between"
+          >
+            <button
+              onClick={() => {
+                setShowPasswordModal(false);
+                setNewPassword('');
+                setConfirmPassword('');
+              }}
+              className="w-10 h-10 flex items-center justify-center"
+            >
+              <span className="material-symbols-outlined text-white">close</span>
+            </button>
+            <h3 className="font-black italic uppercase tracking-widest text-sm">Alterar Senha</h3>
+            <div className="w-10"></div>
+          </header>
+
+          <main className="flex-1 p-6 space-y-8 flex flex-col justify-center max-w-md mx-auto w-full">
+            <div className="text-center space-y-2">
+              <div className="w-16 h-16 bg-blue-500/20 rounded-3xl flex items-center justify-center mx-auto mb-4">
+                <span className="material-symbols-outlined text-blue-500 text-3xl">lock</span>
+              </div>
+              <h2 className="text-xl font-black uppercase italic italic tracking-tighter">Escolha sua nova senha</h2>
+              <p className="text-xs text-white/40 font-medium">As alterações serão aplicadas instantaneamente.</p>
+            </div>
+
+            <div className="space-y-4">
+              <div className="relative">
+                <label className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-2 block pl-1">Nova Senha</label>
+                <div className="relative">
+                  <input
+                    type={showPass ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Mínimo 6 caracteres"
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-4 text-white placeholder:text-white/20 focus:outline-none focus:border-primary transition-colors"
+                  />
+                  <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors">
+                    <span className="material-symbols-outlined">{showPass ? 'visibility_off' : 'visibility'}</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="relative">
+                <label className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-2 block pl-1">Confirmar Senha</label>
+                <div className="relative">
+                  <input
+                    type={showConfirmPass ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Repita a nova senha"
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-4 text-white placeholder:text-white/20 focus:outline-none focus:border-primary transition-colors"
+                  />
+                  <button type="button" onClick={() => setShowConfirmPass(!showConfirmPass)} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors">
+                    <span className="material-symbols-outlined">{showConfirmPass ? 'visibility_off' : 'visibility'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4 pt-4">
+              <button
+                onClick={handleUpdatePassword}
+                disabled={isChangingPassword}
+                className="w-full bg-primary text-black font-black uppercase tracking-widest py-4 rounded-2xl shadow-lg active:scale-95 transition-all disabled:opacity-50"
+              >
+                {isChangingPassword ? 'Salvando...' : 'Salvar Nova Senha'}
+              </button>
+
+              <div className="relative py-2">
+                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/5"></div></div>
+                <div className="relative flex justify-center text-[10px] uppercase font-black tracking-widest"><span className="bg-background-dark px-4 text-white/20">Ou</span></div>
+              </div>
+
+              <button
+                onClick={handleChangePassword}
+                disabled={isChangingPassword}
+                className="w-full bg-white/5 border border-white/10 text-white font-black uppercase tracking-widest py-4 rounded-2xl active:scale-95 transition-all disabled:opacity-50"
+              >
+                {isChangingPassword ? 'Enviando...' : 'Receber link por e-mail'}
+              </button>
+              <p className="text-[10px] text-white/20 text-center uppercase font-black tracking-widest">Use esta opção se esqueceu a senha atual</p>
+            </div>
+          </main>
+        </div>
+      )}
 
       {/* Extrato Modal */}
       {showExtrato && (

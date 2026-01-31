@@ -4,6 +4,7 @@ import { supabase } from './lib/supabase';
 import { SplashScreen } from './screens/SplashScreen';
 import { LoginScreen } from './screens/LoginScreen';
 import { RegisterScreen } from './screens/RegisterScreen';
+import { ResetPasswordScreen } from './screens/ResetPasswordScreen';
 import { HomeScreen } from './screens/HomeScreen';
 import { LobbyScreen } from './screens/LobbyScreen';
 import { ParticipantLobby } from './screens/ParticipantLobby';
@@ -69,6 +70,7 @@ const App: React.FC = () => {
   }, []);
 
   const [isSessionClaimed, setIsSessionClaimed] = useState(false);
+  const [supressWatchdog, setSupressWatchdog] = useState(false);
 
   // Update persistent activity timestamp
   const updateActivity = () => {
@@ -98,6 +100,18 @@ const App: React.FC = () => {
 
     const checkTimeout = async () => {
       const inactiveMs = Date.now() - lastInteraction;
+
+      // Check if we are in recovery flow - do NOT timeout if so for user convenience
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      const searchParams = new URLSearchParams(window.location.search);
+      const isRecovery = hashParams.get('type') === 'recovery' ||
+        hashParams.get('access_token') ||
+        searchParams.get('type') === 'recovery';
+
+      if (isRecovery) {
+        return;
+      }
+
       // 10 minutes = 600,000 ms
       if (inactiveMs > 600000) {
         console.log("[Inactivity] 10 minute timeout reached. Forcing logoff.");
@@ -126,32 +140,69 @@ const App: React.FC = () => {
   useEffect(() => {
     // 1. Check initial session
     const initSession = async () => {
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      const searchParams = new URLSearchParams(window.location.search);
+      const hasRecoveryToken = hashParams.get('type') === 'recovery' ||
+        hashParams.get('access_token') ||
+        searchParams.get('type') === 'recovery';
+
       try {
         const { data: { session: initialSession } } = await supabase.auth.getSession();
         if (initialSession) {
           console.log("[App] Initial session found:", initialSession.user.id);
           setSession(initialSession);
           useUserStore.getState().refreshProfile();
-        } else {
+
+          // If we have a session and recovery token, prioritize reset screen
+          if (hasRecoveryToken) {
+            setCurrentScreen('reset_password');
+          }
+        } else if (!hasRecoveryToken) {
+          // Only redirect to login if we DON'T have a recovery token
           setCurrentScreen('login');
+        } else {
+          // If we have a recovery token but no session yet, wait for AuthStateChange
+          setCurrentScreen('reset_password');
         }
       } catch (e) {
         console.error("Auth init error:", e);
-        setSession(null);
-        setCurrentScreen('login');
+        if (!hasRecoveryToken) {
+          setSession(null);
+          setCurrentScreen('login');
+        }
       } finally {
         setLoading(false);
       }
     };
     initSession();
 
+    // Detectar hash de recuperação de senha (mais persistente)
+    const checkPasswordRecovery = () => {
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      const searchParams = new URLSearchParams(window.location.search);
+      const isRecovery = hashParams.get('type') === 'recovery' ||
+        hashParams.get('access_token') ||
+        searchParams.get('type') === 'recovery';
+
+      if (isRecovery) {
+        console.log('[App] Password recovery detected, locking screen to reset');
+        setCurrentScreen('reset_password');
+      }
+    };
+    checkPasswordRecovery();
+
     // 2. Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
       console.log("[Auth] Event:", event);
       setSession(newSession);
 
-      // ONLY clear state on explicit SIGNED_OUT. 
-      // Avoids clearing on transient 'null' sessions during refresh/token-exchange.
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      const searchParams = new URLSearchParams(window.location.search);
+      const isRecovery = hashParams.get('type') === 'recovery' ||
+        hashParams.get('access_token') ||
+        searchParams.get('type') === 'recovery' ||
+        (event as string) === 'PASSWORD_RECOVERY';
+
       if (event === 'SIGNED_OUT') {
         console.log("[Auth] Signed out. Cleaning up local state.");
         clearBingolaLocalState();
@@ -159,6 +210,21 @@ const App: React.FC = () => {
         setCurrentScreen('login');
       } else if (newSession) {
         useUserStore.getState().refreshProfile();
+        // Força um novo claim de sessão em eventos importantes
+        if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+          setIsSessionClaimed(false);
+        }
+        // Se estivermos em recuperação ou no evento de recuperação, trava a tela
+        if (isRecovery || (event as string) === 'PASSWORD_RECOVERY') {
+          setCurrentScreen('reset_password');
+        }
+      } else if ((event === 'INITIAL_SESSION' || (event as string) === 'PASSWORD_RECOVERY') && isRecovery) {
+        setCurrentScreen('reset_password');
+      } else if (!isRecovery && !newSession && event !== 'INITIAL_SESSION') {
+        // Só redireciona se realemente não for um fluxo de recuperação
+        if (currentScreen !== 'reset_password') {
+          setCurrentScreen('login');
+        }
       }
     });
 
@@ -322,7 +388,10 @@ const App: React.FC = () => {
       // Inactivity check moved to main useEffect for better reliability
 
       // 2. Session Conflict Check
-      if (isSessionClaimed) {
+      // Only check conflict on protected screens (skip auth screens)
+      // Also skip if supressed (grace period after login/reset)
+      const authScreens: AppScreen[] = ['login', 'register', 'splash', 'reset_password'];
+      if (isSessionClaimed && !authScreens.includes(currentScreen) && !supressWatchdog) {
         const { data: profile } = await supabase.from('profiles').select('active_session_id').eq('id', session.user.id).single();
         if (profile && profile.active_session_id && profile.active_session_id !== mySessionId) {
           console.log("[Watchdog] Session conflict detected. Logging out.");
@@ -448,6 +517,12 @@ const App: React.FC = () => {
       case 'splash': return <SplashScreen />;
       case 'login': return <LoginScreen onLogin={() => setCurrentScreen('home')} onGoToRegister={() => setCurrentScreen('register')} />;
       case 'register': return <RegisterScreen onBack={() => setCurrentScreen('login')} onComplete={() => setCurrentScreen('home')} />;
+      case 'reset_password': return <ResetPasswordScreen onComplete={() => {
+        // Ativa uma janela de carência de 3 segundos para evitar conflito de sessão falso
+        setSupressWatchdog(true);
+        setTimeout(() => setSupressWatchdog(false), 3000);
+        setCurrentScreen('home');
+      }} />;
       case 'home': return <HomeScreen onNavigate={setCurrentScreen} />;
       case 'lobby': return <LobbyScreen
         onBack={() => setCurrentScreen('home')}
@@ -518,7 +593,7 @@ const App: React.FC = () => {
 
   return (
     <div className="bg-background-dark min-h-[100dvh]">
-      <div className={`w-full mx-auto min-h-[100dvh] relative shadow-2xl flex flex-col pb-[env(safe-area-inset-bottom)] ${!['login', 'register', 'splash'].includes(currentScreen) ? 'pt-[calc(env(safe-area-inset-top)+40px)]' : 'pt-[env(safe-area-inset-top)]'}`}>
+      <div className={`w-full mx-auto min-h-[100dvh] relative shadow-2xl flex flex-col pb-[env(safe-area-inset-bottom)] ${!['login', 'register', 'splash', 'reset_password'].includes(currentScreen) ? 'pt-[calc(env(safe-area-inset-top)+40px)]' : 'pt-[env(safe-area-inset-top)]'}`}>
         <NotificationToast />
         <PersistentGameLoop />
         <BackgroundMusic currentScreen={currentScreen} />
