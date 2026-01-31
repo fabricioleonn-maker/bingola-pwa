@@ -180,7 +180,24 @@ export const LoginScreen: React.FC<LoginProps> = ({ onLogin, onGoToRegister }) =
         </div>
       </main>
 
-      <footer className="w-full py-4 text-center z-10">
+      <footer className="w-full py-4 text-center z-10 space-y-2">
+        <div className="flex justify-center gap-4 mb-2">
+          <a
+            href="/legal/privacy-policy.html"
+            target="_blank"
+            className="text-white/40 text-xs font-medium hover:text-white/70 transition-colors underline"
+          >
+            Privacidade
+          </a>
+          <span className="text-white/20">•</span>
+          <a
+            href="/legal/terms-of-service.html"
+            target="_blank"
+            className="text-white/40 text-xs font-medium hover:text-white/70 transition-colors underline"
+          >
+            Termos de Uso
+          </a>
+        </div>
         <p className="text-white/40 text-sm font-medium">
           Novo por aqui?
           <button

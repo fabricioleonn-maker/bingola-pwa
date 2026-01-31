@@ -518,7 +518,7 @@ const App: React.FC = () => {
 
   return (
     <div className="bg-background-dark min-h-[100dvh]">
-      <div className={`max-w-[430px] mx-auto min-h-[100dvh] relative shadow-2xl flex flex-col pb-[env(safe-area-inset-bottom)] ${!['login', 'register', 'splash'].includes(currentScreen) ? 'pt-[calc(env(safe-area-inset-top)+40px)]' : 'pt-[env(safe-area-inset-top)]'}`}>
+      <div className={`w-full mx-auto min-h-[100dvh] relative shadow-2xl flex flex-col pb-[env(safe-area-inset-bottom)] ${!['login', 'register', 'splash'].includes(currentScreen) ? 'pt-[calc(env(safe-area-inset-top)+40px)]' : 'pt-[env(safe-area-inset-top)]'}`}>
         <NotificationToast />
         <PersistentGameLoop />
         <BackgroundMusic currentScreen={currentScreen} />

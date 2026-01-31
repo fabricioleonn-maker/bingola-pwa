@@ -181,7 +181,12 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
         <p className="font-black text-primary text-xl uppercase">{room.name}</p>
         <p className="text-white/40 font-bold mt-1 tracking-widest text-[10px]">CÓD MESA: {room.code}</p>
       </div>
-      <button onClick={onBack} className="bg-white/5 hover:bg-white/10 text-white/40 px-8 py-4 rounded-2xl font-black text-xs uppercase transition-all">Cancelar Solicitação</button>
+      <button onClick={async () => {
+        if (currentUser?.id && roomId) {
+          await useRoomStore.getState().hardExit(roomId, currentUser.id);
+        }
+        onBack();
+      }} className="bg-white/5 hover:bg-white/10 text-white/40 px-8 py-4 rounded-2xl font-black text-xs uppercase transition-all">Cancelar Solicitação</button>
     </div>
   );
 

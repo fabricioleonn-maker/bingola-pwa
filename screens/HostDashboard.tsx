@@ -28,12 +28,16 @@ export const HostDashboard: React.FC<Props> = ({ onBack, onPublish, onNavigate }
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setProfileId(user.id);
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('bcoins')
-          .eq('id', user.id)
-          .single();
-        if (profile) setUserBalance(profile.bcoins || 0);
+
+        // Use userStore to get profile
+        const { useUserStore } = await import('../state/userStore');
+        await useUserStore.getState().refreshProfile();
+        const profile = useUserStore.getState().profile;
+
+        if (profile) {
+          setUserBalance(profile.bcoins || 0);
+          console.log('[HostDashboard] Balance loaded:', profile.bcoins);
+        }
       }
     };
     fetchBalance();
@@ -101,12 +105,19 @@ export const HostDashboard: React.FC<Props> = ({ onBack, onPublish, onNavigate }
         ];
         keys.forEach(k => localStorage.removeItem(k));
 
+        console.log('[HostDashboard] About to debit BCoins:', { userBalance, totalCost, profileId, newBalance: userBalance - totalCost });
+
         const { error: updateError } = await supabase
           .from('profiles')
           .update({ bcoins: userBalance - totalCost })
           .eq('id', profileId);
 
-        if (updateError) throw new Error('Erro ao processar pagamento.');
+        if (updateError) {
+          console.error('[HostDashboard] Debit failed:', updateError);
+          throw new Error('Erro ao processar pagamento.');
+        }
+
+        console.log('[HostDashboard] BCoins debited successfully! New balance:', userBalance - totalCost);
 
         const shortCode = Math.floor(1000 + Math.random() * 9000).toString();
         let effectiveBpoints = bpointsNum;

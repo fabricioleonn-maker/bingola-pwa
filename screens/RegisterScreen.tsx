@@ -244,7 +244,24 @@ export const RegisterScreen: React.FC<Props> = ({ onBack, onComplete }) => {
           </button>
         </form>
 
-        <div className="mt-2 text-center pb-12">
+        <div className="mt-2 text-center space-y-3 pb-12">
+          <div className="flex justify-center gap-4">
+            <a
+              href="/legal/privacy-policy.html"
+              target="_blank"
+              className="text-white/40 text-xs font-medium hover:text-white/70 transition-colors underline"
+            >
+              Privacidade
+            </a>
+            <span className="text-white/20">•</span>
+            <a
+              href="/legal/terms-of-service.html"
+              target="_blank"
+              className="text-white/40 text-xs font-medium hover:text-white/70 transition-colors underline"
+            >
+              Termos de Uso
+            </a>
+          </div>
           <p className="text-sm text-white/40 font-medium">
             Já joga com a gente?
             <button

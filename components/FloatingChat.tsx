@@ -157,7 +157,7 @@ export const FloatingChat: React.FC<Props> = ({ bottomOffset = '0px' }) => {
             </div>
 
             {/* Content */}
-            <div className={`w-full max-w-[430px] flex-1 flex flex-col overflow-hidden transition-opacity duration-300 ${isExpanded ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+            <div className={`w-full flex-1 flex flex-col overflow-hidden transition-opacity duration-300 ${isExpanded ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
                 <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
                     {messages.length === 0 && (
                         <div className="h-full flex flex-col items-center justify-center opacity-20 italic text-[10px] uppercase tracking-widest">

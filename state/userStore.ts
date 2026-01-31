@@ -48,35 +48,47 @@ export const useUserStore = create<UserStore>((set, get) => ({
         if (!user) return;
 
         set({ loading: true });
-        const { data: profile, error } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', user.id)
-            .maybeSingle();
 
-        if (error && (error as any).code === 'PGRST116') {
-            // Profile doesn't exist, create it
-            const { data: newProfile } = await supabase
+        try {
+            // SELECT first to avoid overwriting existing bcoins/level
+            let { data: profile } = await supabase
                 .from('profiles')
-                .upsert({
-                    id: user.id,
-                    username: user.user_metadata?.username || user.email?.split('@')[0] || 'Usuário',
-                    bcoins: 100,
-                    level: 1
-                })
                 .select('*')
+                .eq('id', user.id)
                 .maybeSingle();
 
-            if (newProfile) {
-                const isMasterCheck = user.email?.toLowerCase() === 'fabricio.leonn@gmail.com';
-                set({ profile: newProfile as UserProfile, isPremium: false, isMaster: isMasterCheck });
+            // Only INSERT if profile doesn't exist
+            if (!profile) {
+                console.log('[UserStore] Profile not found, creating...');
+                const { data: newProfile, error: insertError } = await supabase.from('profiles').insert({
+                    id: user.id,
+                    username: user.user_metadata?.username || user.email?.split('@')[0] || 'Usuário',
+                    email: user.email,
+                    bcoins: 10,  // Initial BCoins for new users
+                    level: 1
+                }).select('*').single();
+
+                if (insertError) {
+                    console.error('[UserStore] Profile insert error:', insertError);
+                    set({ loading: false });
+                    return;
+                }
+
+                profile = newProfile;
             }
-        } else if (profile) {
-            const isPremium = profile.subscription_end_date ? new Date(profile.subscription_end_date) > new Date() : false;
-            const isMasterCheck = user.email?.toLowerCase() === 'fabricio.leonn@gmail.com' || profile.role === 'master';
-            set({ profile: profile as UserProfile, isPremium, isMaster: isMasterCheck });
+
+            if (profile) {
+                const isPremium = profile.subscription_end_date ? new Date(profile.subscription_end_date) > new Date() : false;
+                const isMasterCheck = user.email?.toLowerCase() === 'fabricio.leonn@gmail.com' || profile.role === 'master';
+                set({ profile: profile as UserProfile, isPremium, isMaster: isMasterCheck });
+
+                console.log('[UserStore] Profile loaded:', profile.username, 'BCoins:', profile.bcoins);
+            }
+        } catch (err) {
+            console.error('[UserStore] Unexpected error:', err);
+        } finally {
+            set({ loading: false });
         }
-        set({ loading: false });
     },
 
     verifyPurchase: async (platform, store, productId, token) => {

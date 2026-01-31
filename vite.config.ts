@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => {
   return {
     server: {
       port: 3333,
-      host: '0.0.0.0',
+      host: '127.0.0.1',
       https: USE_HTTPS ? {} : false,
     },
     plugins: [

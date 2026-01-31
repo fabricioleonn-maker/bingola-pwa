@@ -1,0 +1,17 @@
+{
+  "status": "commited",
+  "type": "frontend",
+  "scope": "codebase",
+  "localEndpoint": "http://localhost:3333",
+  "loginUser": "fleon.ti@gmail.com",
+  "loginPassword": "895910",
+  "executionArgs": {
+    "projectName": "bingola-pwa",
+    "projectPath": "c:\\Projetos\\VOKE\\Bingola\\V.02bingola PWA\\bingola-pwa",
+    "testIds": [],
+    "additionalInstruction": "Execute full test suite. Server is confirmed running on port 3333. Application name is Bingola.",
+    "envs": {
+      "API_KEY": "sk-user-1CT5ihgsqUtsYY4UyROQiQrxdFhrrTqHXqw86iicy9JHIR47d3_Xsi9lxa7Nw6V_Ge2SKLH1nKkyT6b2Jlkfg_T_SRu2YpqZLjN9NJpho5ClkCItxm3sD7vIUTc-FJcbvsc"
+    }
+  }
+}

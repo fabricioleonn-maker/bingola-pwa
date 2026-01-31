@@ -172,6 +172,37 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
     else useNotificationStore.getState().show('E-mail de redefinição de senha enviado!', 'info');
   };
 
+  const handleDeleteAccount = async () => {
+    useNotificationStore.getState().confirm({
+      title: "Excluir Conta Permanentemente?",
+      message: "Esta ação NÃO pode ser desfeita. Todos os seus dados, progresso, BCOINS e BPOINTS serão perdidos permanentemente. Tem certeza absoluta?",
+      onConfirm: async () => {
+        setIsUpdating(true);
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) return;
+
+          // 1. Delete user data from profiles
+          await supabase.from('profiles').delete().eq('id', user.id);
+
+          // 2. Delete auth user (Supabase handles cascade)
+          const { error } = await supabase.auth.admin.deleteUser(user.id);
+
+          if (error) throw error;
+
+          useNotificationStore.getState().show('Conta excluída com sucesso.', 'info');
+          await supabase.auth.signOut();
+          onNavigate('login');
+        } catch (err: any) {
+          console.error('Delete account error:', err);
+          useNotificationStore.getState().show('Erro ao excluir conta: ' + err.message, 'error');
+        } finally {
+          setIsUpdating(false);
+        }
+      }
+    });
+  };
+
   const uploadAvatar = async (event: React.ChangeEvent<HTMLInputElement>) => {
     try {
       setUploading(true);
@@ -508,6 +539,13 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
               </div>
             </div>
             <span className="material-symbols-outlined text-white/20">chevron_right</span>
+          </button>
+
+          <button
+            onClick={handleDeleteAccount}
+            className="w-full bg-transparent border-0 p-2 flex items-center justify-center active:scale-95 transition-all"
+          >
+            <p className="text-red-500 text-xs font-medium hover:underline">Excluir minha conta</p>
           </button>
 
           <button

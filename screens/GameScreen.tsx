@@ -366,10 +366,10 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
           }
 
           if (payload.payload.winner_id === currentUserId) {
-            console.log('[Celebration] YOU WON! Triggering confetti...');
+            console.log('[Celebration] YOU WON! Triggering confetti + win sound...');
             triggerWinCelebration();
           } else {
-            console.log('[Celebration] Someone else won. Playing lose sound...');
+            console.log('[Celebration] Someone else won. Playing lose sound only...');
             triggerLoseSound();
           }
         }, 300);
@@ -391,7 +391,7 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
       supabase.removeChannel(channel);
       clearInterval(interval);
     };
-  }, [roomId, claimedKey]);
+  }, [roomId, claimedKey, currentUserId]);
 
   const { playSfx } = useAudioStore();
   const lastAudioNumRef = useRef<number | null>(null);
