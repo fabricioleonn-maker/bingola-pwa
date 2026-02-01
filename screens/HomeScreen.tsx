@@ -89,7 +89,7 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
   // Sync Profile Data
   useEffect(() => {
     if (profile) {
-      setUserName(profile.username || 'Explorador');
+      setUserName(profile.full_name || profile.username || 'Explorador');
       setProfileAvatar(profile.avatar_url);
     }
   }, [profile]);

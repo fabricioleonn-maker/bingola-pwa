@@ -25,7 +25,9 @@ export const ChatScreen: React.FC<Props> = ({ onBack }) => {
   const [conversations, setConversations] = useState<any[]>([]);
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // Note: scrollRef and messagesEndRef are mostly irrelevant with flex-col-reverse, 
+  // but kept for structure compatibility if needed later.
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -48,8 +50,6 @@ export const ChatScreen: React.FC<Props> = ({ onBack }) => {
         subscribeDMs(p.id);
       });
     });
-
-    // Also keep friends for context if needed, but primary list is conversations
   }, [fetchConversations, fetchDMs, subscribeDMs]);
 
   useEffect(() => {
@@ -65,22 +65,6 @@ export const ChatScreen: React.FC<Props> = ({ onBack }) => {
     }
   }, [roomId, subscribe]);
 
-  useEffect(() => {
-    const scrollToBottom = () => {
-      if (scrollRef.current) {
-        // Use setTimeout to ensure DOM is fully updated (especially for images or layout shifts)
-        setTimeout(() => {
-          scrollRef.current?.scrollTo({
-            top: scrollRef.current.scrollHeight,
-            behavior: 'smooth'
-          });
-        }, 100);
-      }
-    };
-
-    scrollToBottom();
-  }, [messages.length, directMessages, selectedFriendId, activeTab]);
-
   const handleSend = async () => {
     if (!msg.trim()) return;
     if (activeTab === 'table') {
@@ -95,6 +79,10 @@ export const ChatScreen: React.FC<Props> = ({ onBack }) => {
     }
     setMsg('');
   };
+
+  // Helper to reverse messages for display (Newest at Bottom = First in DOM with column-reverse)
+  const displayMessagesTable = [...messages].reverse();
+  const displayMessagesPrivate = selectedFriendId ? [...(directMessages[selectedFriendId] || [])].reverse() : [];
 
   return (
     <div className="bg-background-dark text-white min-h-[100dvh] flex flex-col font-sans pb-[env(safe-area-inset-bottom)]">
@@ -137,17 +125,21 @@ export const ChatScreen: React.FC<Props> = ({ onBack }) => {
         </div>
       </header>
 
-      <main ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 w-full">
+      {/* Main Chat Area - CSS MAGIC: flex-col-reverse keeps content anchored to bottom! */}
+      <main className={`flex-1 overflow-y-auto p-4 w-full flex ${(!selectedFriendId && activeTab === 'private') ? 'flex-col' : 'flex-col-reverse'} gap-4`}>
         {activeTab === 'table' ? (
           <>
-            {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-48 opacity-20">
+            {/* Note: In reverse mode, this 'bottom' filler helps push content down if sparse, or acts as spacer at top */}
+            <div className="min-h-[10px]" />
+
+            {displayMessagesTable.length === 0 && (
+              <div className="flex flex-col items-center justify-center h-48 opacity-20 m-auto">
                 <span className="material-symbols-outlined text-4xl mb-2">forum</span>
                 <p className="text-[10px] font-bold uppercase tracking-[0.2em]">Silêncio na mesa...</p>
               </div>
             )}
 
-            {messages.map((m: any, i) => {
+            {displayMessagesTable.map((m: any, i) => {
               const isMe = m.user_id === currentUserId;
               return (
                 <div key={m.id || i} className={`flex items-end gap-3 ${isMe ? 'justify-end' : ''}`}>
@@ -168,12 +160,15 @@ export const ChatScreen: React.FC<Props> = ({ onBack }) => {
             })}
           </>
         ) : (
-          <div className="w-full">
+          <div className="contents">
+            {/* using 'contents' to let children respect the parent flex-col-reverse/col */}
+
             {!selectedFriendId ? (
-              <div className="space-y-2">
+              // List of conversatsion (Normal Order needed, parent is forced to flex-col for this view)
+              <div className="flex flex-col gap-2 h-full justify-start w-full">
                 <p className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em] mb-4 ml-1">Conversas Recentes</p>
                 {conversations.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-48 opacity-20">
+                  <div className="flex flex-col items-center justify-center h-48 opacity-20 m-auto">
                     <span className="material-symbols-outlined text-4xl mb-2">forum</span>
                     <p className="text-[10px] font-bold uppercase tracking-[0.2em]">Nenhuma conversa...</p>
                   </div>
@@ -185,7 +180,7 @@ export const ChatScreen: React.FC<Props> = ({ onBack }) => {
                       <button
                         key={p.id}
                         onClick={() => setSelectedFriendId(p.id)}
-                        className="w-full bg-white/5 border border-white/5 p-4 rounded-2xl flex items-center gap-4 active:bg-white/10 transition-all text-left"
+                        className="w-full bg-white/5 border border-white/5 p-4 rounded-2xl flex items-center gap-4 active:bg-white/10 transition-all text-left shrink-0"
                       >
                         <img src={p.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100'} className="size-12 rounded-full border border-white/10" />
                         <div className="flex-1 min-w-0">
@@ -201,44 +196,52 @@ export const ChatScreen: React.FC<Props> = ({ onBack }) => {
                 )}
               </div>
             ) : (
-              <div className="space-y-4">
-                <div className="flex items-center gap-3 mb-6 bg-white/5 p-3 rounded-2xl border border-white/10">
+              <>
+                <div className="min-h-[10px]" />
+                {displayMessagesPrivate.map((m: any, i) => {
+                  const isMe = m.sender_id === currentUserId;
+                  const senderAvatar = m.profiles?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100';
+                  const senderName = m.profiles?.username || 'Amigo';
+
+                  return (
+                    <div key={m.id || i} className={`w-full flex items-end gap-3 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                      {!isMe && (
+                        <img src={senderAvatar} className="size-8 rounded-full border border-white/10" />
+                      )}
+                      <div className={`flex flex-col gap-1 ${isMe ? 'items-end' : 'items-start'}`}>
+                        {!isMe && <p className="text-white/40 text-[9px] font-bold uppercase tracking-wider ml-1">{senderName}</p>}
+                        <div className={`max-w-[240px] px-4 py-3 rounded-2xl shadow-sm ${isMe ? 'bg-primary text-white rounded-br-none' : 'bg-white/10 text-white/90 border border-white/10 rounded-bl-none'}`}>
+                          <p className="text-sm font-medium leading-relaxed">{m.content}</p>
+                        </div>
+                      </div>
+                      {isMe && (
+                        <img src={senderAvatar} className="size-8 rounded-full border border-primary/30" />
+                      )}
+                    </div>
+                  );
+                })}
+
+                {displayMessagesPrivate.length === 0 && (
+                  <div className="flex flex-col items-center justify-center h-48 opacity-20 m-auto">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.2em]">Diga um Oi!</p>
+                  </div>
+                )}
+
+                {/* Header inside chat - MUST be after messages in DOM to be at TOP visually? 
+                      No, in column-reverse:
+                      Last DOM element = Top Visual
+                      First DOM element = Bottom Visual
+                      
+                      So Header should be LAST child in DOM.
+                  */}
+                <div className="w-full flex items-center gap-3 mb-6 bg-white/5 p-3 rounded-2xl border border-white/10 order-last shrink-0">
                   <button onClick={() => setSelectedFriendId(null)} className="size-8 flex items-center justify-center bg-white/10 rounded-full text-white/60">
                     <span className="material-symbols-outlined text-sm">arrow_back</span>
                   </button>
                   <img src={conversations.find(p => p.id === selectedFriendId)?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100'} className="size-8 rounded-full" />
                   <p className="font-bold text-sm">{conversations.find(p => p.id === selectedFriendId)?.username}</p>
                 </div>
-
-                {(directMessages[selectedFriendId] || []).length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-48 opacity-20">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.2em]">Diga um Oi!</p>
-                  </div>
-                ) : (
-                  (directMessages[selectedFriendId] || []).map((m: any, i) => {
-                    const isMe = m.sender_id === currentUserId;
-                    const senderAvatar = m.profiles?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100';
-                    const senderName = m.profiles?.username || 'Amigo';
-
-                    return (
-                      <div key={m.id || i} className={`flex items-end gap-3 ${isMe ? 'justify-end' : 'justify-start'}`}>
-                        {!isMe && (
-                          <img src={senderAvatar} className="size-8 rounded-full border border-white/10" />
-                        )}
-                        <div className={`flex flex-col gap-1 ${isMe ? 'items-end' : 'items-start'}`}>
-                          {!isMe && <p className="text-white/40 text-[9px] font-bold uppercase tracking-wider ml-1">{senderName}</p>}
-                          <div className={`max-w-[240px] px-4 py-3 rounded-2xl shadow-sm ${isMe ? 'bg-primary text-white rounded-br-none' : 'bg-white/10 text-white/90 border border-white/10 rounded-bl-none'}`}>
-                            <p className="text-sm font-medium leading-relaxed">{m.content}</p>
-                          </div>
-                        </div>
-                        {isMe && (
-                          <img src={senderAvatar} className="size-8 rounded-full border border-primary/30" />
-                        )}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
+              </>
             )}
           </div>
         )}

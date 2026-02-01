@@ -84,42 +84,48 @@ export const RankingScreen: React.FC<Props> = ({ onBack }) => {
       const spNow = new Date(utc + (3600000 * spOffset));
 
       let targetDate = new Date(spNow);
+      let msLeft = 0;
 
       if (appSettings.bpoints_reset_mode === 'teste') {
+        // For Teste Mode: Use absolute time difference (Real UTC vs Real UTC)
+        // This avoids the 3h offset introduced by spNow
         const lastReset = appSettings.last_bpoints_reset ? new Date(appSettings.last_bpoints_reset) : new Date();
-        targetDate = new Date(lastReset.getTime() + 15000);
-      } else if (appSettings.bpoints_reset_mode === 'daily') {
-        targetDate.setHours(24, 0, 0, 0);
-      } else if (appSettings.bpoints_reset_mode === 'weekly') {
-        const day = spNow.getDay(); // 0 (Sun) to 6 (Sat)
-        // Brazil week reset is Mon 0h. Sun is day 0. Mon is day 1.
-        // Days until next Monday:
-        // if Sun (0) -> 1
-        // if Mon (1) -> 7
-        // if Tue (2) -> 6 ...
-        const diff = day === 0 ? 1 : (8 - day);
-        targetDate.setDate(spNow.getDate() + diff);
-        targetDate.setHours(0, 0, 0, 0);
-      } else if (appSettings.bpoints_reset_mode === 'biweekly') {
-        // 1st or 16th
-        const dayOfMonth = spNow.getDate();
-        if (dayOfMonth < 16) {
-          targetDate.setDate(16);
-          targetDate.setHours(0, 0, 0, 0);
-        } else {
-          targetDate.setMonth(spNow.getMonth() + 1);
-          targetDate.setDate(1);
-          targetDate.setHours(0, 0, 0, 0);
-        }
-      } else if (appSettings.bpoints_reset_mode === 'monthly') {
-        targetDate = new Date(spNow.getFullYear(), spNow.getMonth() + 1, 1, 0, 0, 0);
+        const absoluteTarget = new Date(lastReset.getTime() + 15000);
+        msLeft = absoluteTarget.getTime() - now.getTime();
+      } else if (appSettings.bpoints_reset_mode === 'test_1min') {
+        // NEW: 1 Minute Test Override
+        const lastReset = appSettings.last_bpoints_reset ? new Date(appSettings.last_bpoints_reset) : new Date();
+        const absoluteTarget = new Date(lastReset.getTime() + 60000); // 60 seconds
+        msLeft = absoluteTarget.getTime() - now.getTime();
       } else {
-        // Fallback for manual or unknown
-        setTimeLeft('');
-        return;
-      }
+        // For Calendar Modes: Use SP Visual Time
+        if (appSettings.bpoints_reset_mode === 'daily') {
+          targetDate.setHours(24, 0, 0, 0);
+        } else if (appSettings.bpoints_reset_mode === 'weekly') {
+          const day = spNow.getDay();
+          const diff = day === 0 ? 1 : (8 - day);
+          targetDate.setDate(spNow.getDate() + diff);
+          targetDate.setHours(0, 0, 0, 0);
+        } else if (appSettings.bpoints_reset_mode === 'biweekly') {
+          const dayOfMonth = spNow.getDate();
+          if (dayOfMonth < 16) {
+            targetDate.setDate(16);
+            targetDate.setHours(0, 0, 0, 0);
+          } else {
+            targetDate.setMonth(spNow.getMonth() + 1);
+            targetDate.setDate(1);
+            targetDate.setHours(0, 0, 0, 0);
+          }
+        } else if (appSettings.bpoints_reset_mode === 'monthly') {
+          targetDate = new Date(spNow.getFullYear(), spNow.getMonth() + 1, 1, 0, 0, 0);
+        } else {
+          setTimeLeft('');
+          return;
+        }
 
-      const msLeft = targetDate.getTime() - spNow.getTime();
+        // Compare Shifted Target vs Shifted Now
+        msLeft = targetDate.getTime() - spNow.getTime();
+      }
 
       if (msLeft < 0) {
         setTimeLeft('Resetando...');
@@ -310,14 +316,29 @@ export const RankingScreen: React.FC<Props> = ({ onBack }) => {
           <div className="flex items-center justify-between mb-8">
             <div>
               <h3 className="text-xl font-bold">Top Jogadores</h3>
+              {appSettings?.bpoints_reset_mode === 'test_1min' && (
+                <p className="text-[10px] font-black uppercase text-orange-500 tracking-widest animate-pulse mt-1">
+                  ⚡ Modo Teste: Ciclo Acelerado
+                </p>
+              )}
             </div>
             <span className="text-xs text-white/30 font-bold uppercase tracking-widest">
-              {appSettings?.bpoints_reset_mode === 'manual' ? 'Ciclo Único' :
-                appSettings?.bpoints_reset_mode === 'teste' ? 'Teste' :
-                  appSettings?.bpoints_reset_mode === 'daily' ? 'Diário' :
-                    appSettings?.bpoints_reset_mode === 'weekly' ? 'Semanal' :
-                      appSettings?.bpoints_reset_mode === 'biweekly' ? 'Quinzenal' :
-                        appSettings?.bpoints_reset_mode === 'monthly' ? 'Mensal' : 'Semanal'}
+              {(() => {
+                // If in test override, show the Original mode label (effectively "Accelerating" it)
+                const mode = appSettings?.bpoints_reset_mode === 'test_1min'
+                  ? appSettings?.previous_reset_mode
+                  : appSettings?.bpoints_reset_mode;
+
+                switch (mode) {
+                  case 'manual': return 'Ciclo Único';
+                  case 'teste': return 'Teste (15s)';
+                  case 'daily': return 'Diário';
+                  case 'weekly': return 'Semanal';
+                  case 'biweekly': return 'Quinzenal';
+                  case 'monthly': return 'Mensal';
+                  default: return 'Geral';
+                }
+              })()}
             </span>
           </div>
 

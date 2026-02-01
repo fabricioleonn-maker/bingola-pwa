@@ -123,9 +123,16 @@ export const MasterHubScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
 
     const handleUpdateResetMode = async (mode: string) => {
         if (!appSettings?.id) return;
-        const { error } = await supabase.from('app_settings').update({ bpoints_reset_mode: mode }).eq('id', appSettings.id);
+
+        // Also reset the "last reset" timer to NOW so the new cycle starts immediately
+        const updates: any = { bpoints_reset_mode: mode };
+        if (mode === 'teste') {
+            updates.last_bpoints_reset = new Date().toISOString();
+        }
+
+        const { error } = await supabase.from('app_settings').update(updates).eq('id', appSettings.id);
         if (!error) {
-            setAppSettings({ ...appSettings, bpoints_reset_mode: mode });
+            setAppSettings({ ...appSettings, ...updates });
             useNotificationStore.getState().show(`Ciclo alterado para: ${mode}`, 'success');
         }
     };
@@ -267,6 +274,36 @@ export const MasterHubScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
                                 {mode.label}
                             </button>
                         ))}
+                    </div>
+
+                    {/* NEW: 1-Minute Cycle Override Test */}
+                    <div className="pt-2 pb-2">
+                        <button
+                            onClick={async () => {
+                                if (!appSettings?.id) return;
+                                useNotificationStore.getState().confirm({
+                                    title: "Testar Ciclo de 1 Min?",
+                                    message: "O ciclo ATUAL será salvo. O sistema mudará para 1 minuto (Teste). Ao acabar, ele voltará para o ciclo original automaticamente.",
+                                    onConfirm: async () => {
+                                        const updates = {
+                                            previous_reset_mode: appSettings.bpoints_reset_mode, // Save current
+                                            bpoints_reset_mode: 'test_1min',
+                                            last_bpoints_reset: new Date().toISOString()
+                                        };
+                                        const { error } = await supabase.from('app_settings').update(updates).eq('id', appSettings.id);
+                                        if (!error) {
+                                            setAppSettings({ ...appSettings, ...updates });
+                                            useNotificationStore.getState().show("Modo Teste (1 Min) iniciado!", 'success');
+                                            fetchData();
+                                        }
+                                    }
+                                });
+                            }}
+                            className="w-full py-4 bg-orange-500/10 border border-orange-500/50 text-orange-500 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-orange-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
+                        >
+                            <span className="material-symbols-outlined text-lg">timer_10_alt_1</span>
+                            TESTAR CICLO DE 1 MINUTO (COM RETORNO)
+                        </button>
                     </div>
 
                     <button

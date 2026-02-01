@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useNotificationStore } from '../state/notificationStore';
 import { useUserStore } from '../state/userStore';
@@ -15,6 +15,22 @@ export const PlayerManagementScreen: React.FC<Props> = ({ onBack }) => {
     const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
     const [amount, setAmount] = useState('');
     const [isUpdating, setIsUpdating] = useState(false);
+
+    useEffect(() => {
+        fetchInitialPlayers();
+    }, []);
+
+    const fetchInitialPlayers = async () => {
+        const { data, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .order('username', { ascending: true })
+            .limit(50);
+
+        if (data && !error) {
+            setSearchResults(data);
+        }
+    };
 
     const handleSearch = async () => {
         if (!searchQuery.trim() || !isMaster) return;
