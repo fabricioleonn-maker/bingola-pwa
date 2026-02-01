@@ -82,24 +82,38 @@ export default defineConfig(({ mode }) => {
         manifest: {
           name: 'Bingola - Bingo Social',
           short_name: 'Bingola',
-          description: 'Bingo Social para diversão com amigos',
+          description: 'A sorte começa aqui. Jogue bingo social com seus amigos.',
+          start_url: '/',
+          display: 'standalone',
+          background_color: '#000000',
           theme_color: '#ff3d71',
+          orientation: 'portrait',
+          categories: ['games', 'social'],
           icons: [
             {
               src: 'pwa-192x192.png',
               sizes: '192x192',
-              type: 'image/png'
-            },
-            {
-              src: 'pwa-512x512.png',
-              sizes: '512x512',
-              type: 'image/png'
+              type: 'image/png',
+              purpose: 'any maskable'
             },
             {
               src: 'pwa-512x512.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any maskable'
+            }
+          ],
+          shortcuts: [
+            {
+              name: 'Iniciar Jogo',
+              short_name: 'Jogar',
+              url: '/',
+              icons: [
+                {
+                  src: 'pwa-192x192.png',
+                  sizes: '192x192'
+                }
+              ]
             }
           ]
         }

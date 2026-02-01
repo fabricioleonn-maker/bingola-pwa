@@ -10,6 +10,7 @@ import QRScanner from '../components/QRScanner';
 import { useUserStore } from '../state/userStore';
 import { useUILabels } from '../state/uiLabelsStore';
 import { EditableElement } from '../components/EditableElement';
+import { usePWAInstall } from '../hooks/usePWAInstall';
 
 interface HomeProps {
   onNavigate: (screen: AppScreen) => void;
@@ -94,6 +95,7 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
   }, [profile]);
 
   const { incoming, respondToInvite } = useInvitationStore();
+  const { isInstallable, installApp } = usePWAInstall();
 
   // Derive HUD state from Store
   const isGameRunning = !!roomId && room?.status === 'playing';
@@ -412,6 +414,22 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
               <span className="text-white font-bold text-lg">{getLabel('btn_home_join', 'Entrar com Código')}</span>
             </button>
           </EditableElement>
+
+          {/* 4. Install PWA Button */}
+          {isInstallable && (
+            <button
+              onClick={installApp}
+              className="flex flex-col items-center justify-center h-48 bg-gradient-to-br from-purple-600 to-blue-600 rounded-3xl shadow-xl relative overflow-hidden group active:scale-95 transition-all w-full animate-in zoom-in-50 duration-300"
+            >
+              <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center mb-4 ring-4 ring-white/10">
+                <span className="material-symbols-outlined text-white text-3xl animate-bounce">download</span>
+              </div>
+              <span className="text-white font-black text-lg uppercase tracking-tight">Instalar App</span>
+              <span className="text-white/80 text-[10px] uppercase font-bold tracking-widest mt-2 bg-black/20 px-3 py-1 rounded-full">
+                Melhor Experiência
+              </span>
+            </button>
+          )}
         </div>
 
         {
