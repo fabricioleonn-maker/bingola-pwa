@@ -66,10 +66,20 @@ export const ChatScreen: React.FC<Props> = ({ onBack }) => {
   }, [roomId, subscribe]);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages, directMessages, selectedFriendId, activeTab]);
+    const scrollToBottom = () => {
+      if (scrollRef.current) {
+        // Use setTimeout to ensure DOM is fully updated (especially for images or layout shifts)
+        setTimeout(() => {
+          scrollRef.current?.scrollTo({
+            top: scrollRef.current.scrollHeight,
+            behavior: 'smooth'
+          });
+        }, 100);
+      }
+    };
+
+    scrollToBottom();
+  }, [messages.length, directMessages, selectedFriendId, activeTab]);
 
   const handleSend = async () => {
     if (!msg.trim()) return;

@@ -230,7 +230,8 @@
         <h3>7.2. Conteúdo do Usuário</h3>
         <p>Ao enviar conteúdo (ex: mensagens de chat, avatares personalizados), você concede ao Bingola uma
             <strong>licença não exclusiva, global e gratuita</strong> para usar, exibir e distribuir esse conteúdo
-            dentro do aplicativo.</p>
+            dentro do aplicativo.
+        </p>
         <p>Você garante que possui os direitos sobre o conteúdo enviado.</p>
 
         <h2>8. Disponibilidade do Serviço</h2>
@@ -322,6 +323,28 @@
             <p><strong>Obrigado por jogar Bingola! Divirta-se e jogue com responsabilidade.</strong> 🎲✨</p>
         </div>
     </div>
+    <!-- Floating Back Button -->
+    <button onclick="window.history.back()" style="
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: #ff386c;
+        color: white;
+        border: none;
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        font-size: 24px;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(255, 56, 108, 0.4);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        transition: transform 0.2s;
+    " onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'">
+        ←
+    </button>
 </body>
 
 </html>
