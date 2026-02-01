@@ -430,6 +430,13 @@ export const HomeScreen: React.FC<HomeProps> = ({ onNavigate }) => {
               </span>
             </button>
           )}
+
+          {/* DEBUG PWA INFO (Temporary) */}
+          <div className="bg-black/40 p-2 rounded text-[8px] font-mono text-white/50 text-center">
+            PWA Status: {isInstallable ? 'PRONTO' : 'Ag. Evento'} <br />
+            SW Support: {'serviceWorker' in navigator ? 'SIM' : 'NÃO'} <br />
+            Display: {window.matchMedia('(display-mode: standalone)').matches ? 'STANDALONE' : 'BROWSER'}
+          </div>
         </div>
 
         {

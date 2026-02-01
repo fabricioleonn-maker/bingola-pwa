@@ -19,6 +19,8 @@ export default defineConfig(({ mode }) => {
       USE_HTTPS && basicSsl(),
       VitePWA({
         registerType: 'autoUpdate',
+        devOptions: { enabled: true },
+        manifestFilename: 'manifest.json',
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
         workbox: {
           cleanupOutdatedCaches: true,
@@ -91,13 +93,13 @@ export default defineConfig(({ mode }) => {
           categories: ['games', 'social'],
           icons: [
             {
-              src: 'pwa-192x192.png',
+              src: '/pwa-192x192.png',
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any maskable'
             },
             {
-              src: 'pwa-512x512.png',
+              src: '/pwa-512x512.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any maskable'
@@ -110,7 +112,7 @@ export default defineConfig(({ mode }) => {
               url: '/',
               icons: [
                 {
-                  src: 'pwa-192x192.png',
+                  src: '/pwa-192x192.png',
                   sizes: '192x192'
                 }
               ]
