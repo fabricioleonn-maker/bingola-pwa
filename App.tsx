@@ -579,7 +579,19 @@ const App: React.FC = () => {
         else if (s === 'audio_settings') navigateToAudio('room_settings');
         else setCurrentScreen(s);
       }} />;
-      case 'audio_settings': return <AudioSettingsScreen onBack={() => setCurrentScreen(audioReturnScreen)} onNavigate={setCurrentScreen} />;
+      case 'audio_settings': return <AudioSettingsScreen
+        onBack={() => {
+          // Robust Fallback: If return screen is 'home' (default) but we are in a room, 
+          // we likely want to go back to the room context
+          if (audioReturnScreen === 'home' && roomId) {
+            const isPlaying = activeRoom?.status === 'playing';
+            setCurrentScreen(isPlaying ? 'game' : 'lobby');
+          } else {
+            setCurrentScreen(audioReturnScreen);
+          }
+        }}
+        onNavigate={setCurrentScreen}
+      />;
       case 'rules_settings': return <RulesSettingsScreen onBack={() => setCurrentScreen('room_settings')} />;
       case 'chat': return <ChatScreen onBack={() => {
         const s = useRoomStore.getState();

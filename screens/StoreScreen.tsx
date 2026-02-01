@@ -1,13 +1,171 @@
-
+import React, { useState, useEffect } from 'react';
 import { Capacitor } from '@capacitor/core';
+import { supabase } from '../lib/supabase';
+import { useUserStore } from '../state/userStore';
+import { useNotificationStore } from '../state/notificationStore';
+import { AppScreen } from '../types';
+import { SubscriptionModal } from '../components/SubscriptionModal';
+import { RewardNotificationModal } from '../components/RewardNotificationModal';
 
-// ... existing imports ...
+interface Props {
+  onBack: () => void;
+}
+
+interface Package {
+  id: string;
+  coins: number;
+  title: string;
+  price: number;
+  promo_price?: number;
+  icon: string;
+  bonus?: string;
+  popular?: boolean;
+  is_popular?: boolean;
+  mega?: boolean;
+  description?: string;
+}
 
 export const StoreScreen: React.FC<Props> = ({ onBack }) => {
   const isNative = Capacitor.isNativePlatform();
-  // ... existing hooks ...
+  const { profile, isPremium, refreshProfile, verifyPurchase } = useUserStore();
 
-  // ... (inside component)
+  const [cart, setCart] = useState<Package[]>([]);
+  const [globalPromo, setGlobalPromo] = useState<{ active: boolean, label: string, discount: number } | null>(null);
+  const [isFinishing, setIsFinishing] = useState(false);
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+  const [showThankYou, setShowThankYou] = useState(false);
+  const [lastPurchase, setLastPurchase] = useState<any>(null);
+
+  const [promoCode, setPromoCode] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string, discount: number } | null>(null);
+  const [referrerId, setReferrerId] = useState<string | null>(null);
+  const [referrerName, setReferrerName] = useState<string | null>(null);
+  const [promoError, setPromoError] = useState<string | null>(null);
+
+  const packages: Package[] = [
+    { id: '1', coins: 100, title: 'Pacote Iniciante', price: 9.90, icon: 'toll' },
+    { id: '2', coins: 550, title: 'Pacote Jogador', price: 49.90, bonus: '+10%', popular: true, icon: 'savings' },
+    { id: '3', coins: 1200, title: 'Pacote Mestre', price: 99.90, bonus: '+20%', icon: 'diamond' },
+    { id: '4', coins: 3000, title: 'Pacote Lenda', price: 249.90, bonus: '+25%', mega: true, icon: 'workspace_premium', description: 'Melhor Custo Benefício' }
+  ];
+
+  /* Fetch global promo on mount */
+  useEffect(() => {
+    const fetchPromo = async () => {
+      // Simulate fetching global promo or real implementation
+      // const { data } = await supabase.from('global_promos').select('*').eq('active', true).single();
+      // if(data) setGlobalPromo(data);
+      // For now, hardcoded mock or empty
+      setGlobalPromo({ active: true, label: "PROMO RELÂMPAGO", discount: 5 });
+    };
+    fetchPromo();
+  }, []);
+
+  const getPackagePrice = (pkg: Package) => {
+    let price = pkg.promo_price || pkg.price;
+    if (globalPromo?.active) {
+      price = price * (1 - globalPromo.discount / 100);
+    }
+    if (isPremium) {
+      price = price * 0.9; // 10% off for premium
+    }
+    return price;
+  };
+
+  const addToCart = (pkg: Package) => {
+    setCart([...cart, pkg]);
+    useNotificationStore.getState().show(`${pkg.coins} BCOINS adicionado ao carrinho`, 'success');
+  };
+
+  const removeFromCart = (id: string) => {
+    const index = cart.findIndex(i => i.id === id);
+    if (index !== -1) {
+      const newCart = [...cart];
+      newCart.splice(index, 1);
+      setCart(newCart);
+    }
+  };
+
+  const getTotalCoins = () => {
+    return cart.reduce((acc, item) => acc + item.coins, 0);
+  };
+
+  const getGrossTotal = () => {
+    return cart.reduce((acc, item) => acc + getPackagePrice(item), 0);
+  };
+
+  const getNetTotal = () => {
+    let total = getGrossTotal();
+    if (appliedCoupon) {
+      total = total * (1 - appliedCoupon.discount / 100);
+    }
+    return total;
+  };
+
+  const applyPromoCode = async () => {
+    setPromoError(null);
+    if (!promoCode) return;
+
+    // Mock coupon verification
+    if (promoCode === 'VOKE10') {
+      setAppliedCoupon({ code: 'VOKE10', discount: 10 });
+      setReferrerName('Admin');
+      useNotificationStore.getState().show('Cupom aplicado!', 'success');
+    } else {
+      setPromoError('Cupom inválido ou expirado');
+    }
+
+    // Real implementation would be:
+    /*
+    const { data, error } = await supabase.rpc('check_coupon', { code: promoCode });
+    if (error || !data) {
+       setPromoError('Cupom inválido');
+    } else {
+       setAppliedCoupon(data);
+       // ... setReferrer if applicable
+    }
+    */
+  };
+
+  const finalizePurchase = async () => {
+    if (cart.length === 0) return;
+    setIsFinishing(true);
+
+    // Simulation of payment flow
+    try {
+      // In real app: Open payment gateway / In-App Purchase
+      // Wait for confirmation...
+
+      // Mock success for now
+      await new Promise(r => setTimeout(r, 1500));
+
+      // Grant coins (mock)
+      const totalCoins = getTotalCoins();
+      // Here we would call backend to verify purchase/transaction
+      // await verifyPurchase(...)
+
+      // Manual update for simulation (since backend isn't connected to this mock flow)
+      if (profile) {
+        // This is just UI simulation, normally backend handles this
+        console.log('Purchase finalized', { coins: totalCoins, price: getNetTotal() });
+      }
+
+      setLastPurchase({
+        coins: totalCoins,
+        total: getNetTotal(),
+        method: 'PIX/Cartão'
+      });
+      setShowThankYou(true);
+      setCart([]);
+      setAppliedCoupon(null);
+      setPromoCode('');
+
+    } catch (error) {
+      useNotificationStore.getState().show('Erro ao processar compra', 'error');
+    } finally {
+      setIsFinishing(false);
+    }
+  };
 
   return (
     <div className="flex flex-col min-h-screen bg-background-dark">
@@ -26,7 +184,6 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
               <button onClick={onBack} className="w-full bg-white/10 hover:bg-white/20 text-white font-bold py-3 rounded-xl uppercase text-xs tracking-widest transition-all">
                 Voltar
               </button>
-              {/* Link to Play Store could be added here later */}
             </div>
           </div>
         </div>
@@ -156,13 +313,13 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
             {cart.length === 0 ? (
               <p className="text-center text-white/20 text-xs py-4 uppercase font-bold italic tracking-widest">Nenhum pacote selecionado</p>
             ) : cart.map((item, idx) => (
-              <div key={item.id} className="flex items-center justify-between bg-white/[0.02] p-4 rounded-2xl border border-white/5">
+              <div key={item.id + idx} className="flex items-center justify-between bg-white/[0.02] p-4 rounded-2xl border border-white/5">
                 <div>
                   <p className="font-black text-sm">{item.coins} BCOINS</p>
                   <p className="text-[10px] text-white/30 uppercase font-bold">{item.title}</p>
                 </div>
                 <div className="flex items-center gap-4">
-                  <p className="font-black text-primary text-sm">R$ {item.price.toFixed(2).replace('.', ',')}</p>
+                  <p className="font-black text-primary text-sm">R$ {getPackagePrice(item).toFixed(2).replace('.', ',')}</p>
                   <button onClick={() => removeFromCart(item.id)} className="w-8 h-8 flex items-center justify-center text-red-500/50 hover:text-red-500 transition-colors">
                     <span className="material-symbols-outlined text-lg">delete</span>
                   </button>

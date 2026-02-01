@@ -5,11 +5,6 @@ import { supabase } from '../lib/supabase';
 
 import { AppScreen } from '../types';
 
-interface Props {
-    onBack: () => void;
-    onNavigate: (screen: AppScreen) => void;
-}
-
 import { useChatStore } from '../state/chatStore';
 
 interface Props {
@@ -30,6 +25,9 @@ export const SocialScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
     const [dmContent, setDmContent] = useState('');
 
     useEffect(() => {
+        // Reset global unread count when entering this screen
+        useChatStore.getState().resetGlobalUnread();
+
         fetchFriends().finally(() => setLoading(false));
         const unsubscribe = useFriendshipStore.getState().subscribe();
         return () => unsubscribe();
@@ -142,7 +140,7 @@ export const SocialScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
                 </div>
             </header>
 
-            <main className="flex-1 max-w-md mx-auto w-full p-6 overflow-y-auto">
+            <main className="flex-1 max-w-md mx-auto w-full p-6 pb-32 overflow-y-auto no-scrollbar">
                 {loading ? (
                     <div className="flex flex-col items-center justify-center h-64 gap-4 opacity-40">
                         <div className="size-12 rounded-full border-4 border-primary/30 border-t-primary animate-spin"></div>

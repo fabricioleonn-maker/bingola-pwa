@@ -2,17 +2,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useRoomStore } from '../state/roomStore';
-
-interface Message {
-    id: string;
-    user_id: string;
-    content: string;
-    created_at: string;
-    profiles: {
-        username: string;
-        avatar_url: string;
-    };
-}
+import { useChatStore } from '../state/chatStore';
+import { Message } from '../state/types';
 
 interface Props {
     bottomOffset?: string;
@@ -21,9 +12,16 @@ interface Props {
 export const FloatingChat: React.FC<Props> = ({ bottomOffset = '0px' }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const [showEmojis, setShowEmojis] = useState(false);
-    const [messages, setMessages] = useState<Message[]>([]);
     const [newMessage, setNewMessage] = useState('');
-    const [unreadCount, setUnreadCount] = useState(0);
+
+    // Sync with Global Store
+    const messages = useChatStore(s => s.roomMessages);
+    const unreadCount = useChatStore(s => s.unreadCount);
+    const globalUnreadCount = useChatStore(s => s.globalUnreadCount);
+    const subscribeToRoom = useChatStore(s => s.subscribeToRoom);
+    const sendMessageToRoom = useChatStore(s => s.sendMessageToRoom);
+    const markAsRead = useChatStore(s => s.markRoomAsRead);
+
     const roomId = useRoomStore(s => s.roomId);
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
@@ -37,59 +35,22 @@ export const FloatingChat: React.FC<Props> = ({ bottomOffset = '0px' }) => {
 
     const scrollRef = useRef<HTMLDivElement>(null);
 
+    // Subscribe to Room via Store
     useEffect(() => {
         if (!roomId) return;
+        const unsubscribe = subscribeToRoom(roomId);
+        return () => unsubscribe();
+    }, [roomId, subscribeToRoom]);
 
-        const fetchMessages = async () => {
-            const { data } = await supabase
-                .from('room_messages')
-                .select('*, profiles:user_id(username, avatar_url)')
-                .eq('room_id', roomId)
-                .order('created_at', { ascending: false })
-                .limit(50);
-
-            if (data) setMessages(data.reverse());
-        };
-
-        fetchMessages();
-
-        const channel = supabase.channel(`room_chat:${roomId}`)
-            .on(
-                'postgres_changes',
-                { event: 'INSERT', schema: 'public', table: 'room_messages', filter: `room_id=eq.${roomId}` },
-                async (payload) => {
-                    // Deduplicate
-                    const exists = messages.some(m => m.id === payload.new.id);
-                    if (exists) return;
-
-                    const { data: profile } = await supabase
-                        .from('profiles')
-                        .select('username, avatar_url')
-                        .eq('id', payload.new.user_id)
-                        .single();
-
-                    const fullMsg = { ...payload.new, profiles: profile } as Message;
-                    setMessages(prev => {
-                        if (prev.some(m => m.id === fullMsg.id)) return prev;
-                        return [...prev, fullMsg];
-                    });
-
-                    if (!isExpanded) setUnreadCount(c => c + 1);
-                }
-            )
-            .subscribe();
-
-        return () => { supabase.removeChannel(channel); };
-    }, [roomId, isExpanded]);
-
+    // Handle Read Status
     useEffect(() => {
         if (isExpanded) {
-            setUnreadCount(0);
+            markAsRead();
             setTimeout(() => {
                 scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
             }, 100);
         }
-    }, [isExpanded, messages.length]);
+    }, [isExpanded, messages.length, markAsRead]);
 
     const handleSend = async (e?: React.FormEvent) => {
         if (e) e.preventDefault();
@@ -100,12 +61,7 @@ export const FloatingChat: React.FC<Props> = ({ bottomOffset = '0px' }) => {
         setShowEmojis(false); // Close emojis on send
 
         try {
-            const { error } = await supabase.from('room_messages').insert({
-                room_id: roomId,
-                user_id: currentUserId,
-                content
-            });
-            if (error) throw error;
+            await sendMessageToRoom(roomId, content);
         } catch (err) {
             console.error("[Chat] Send error:", err);
         }
@@ -136,11 +92,13 @@ export const FloatingChat: React.FC<Props> = ({ bottomOffset = '0px' }) => {
                             {unreadCount > 0 ? 'mark_chat_unread' : 'chat'}
                         </span>
                         {unreadCount > 0 && (
-                            <span className="absolute -top-1 -right-1 size-3 bg-red-500 rounded-full border border-background-dark animate-pulse" />
+                            <span className="absolute -top-1 -right-1 size-4 bg-red-500 text-white text-[9px] font-bold rounded-full border border-background-dark flex items-center justify-center animate-pulse">
+                                {unreadCount}
+                            </span>
                         )}
                     </div>
                     <span className="text-[10px] font-black uppercase tracking-widest text-white/40">
-                        Chat da Mesa {unreadCount > 0 && <span className="text-primary">({unreadCount})</span>}
+                        Chat {unreadCount > 0 && <span className="text-primary">({unreadCount})</span>}
                     </span>
                 </div>
 
@@ -166,7 +124,8 @@ export const FloatingChat: React.FC<Props> = ({ bottomOffset = '0px' }) => {
                         </div>
                     )}
                     {messages.map((msg) => {
-                        const isMe = msg.user_id === currentUserId;
+                        const senderId = msg.user_id || msg.sender_id;
+                        const isMe = senderId === currentUserId;
                         return (
                             <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                                 <div className="flex items-center gap-2 mb-1">

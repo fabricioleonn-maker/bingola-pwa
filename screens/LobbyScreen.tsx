@@ -38,6 +38,7 @@ export const LobbyScreen: React.FC<Props> = ({ onBack, onStart, onNavigate }) =>
   const { sendInvite } = useInvitationStore();
   const [showVoiceModal, setShowVoiceModal] = useState(false);
   const { selectedVoice, setVoice, isNarrationMuted, toggleNarration } = useAudioStore();
+  const unreadCount = useChatStore(s => s.unreadCount);
 
   useEffect(() => {
     if (!roomId) return;
@@ -237,8 +238,13 @@ export const LobbyScreen: React.FC<Props> = ({ onBack, onStart, onNavigate }) =>
             <span className="material-symbols-outlined">music_note</span>
           </button>
 
-          <button onClick={() => onNavigate('chat')} className="flex size-11 items-center justify-center text-primary bg-primary/10 rounded-xl">
+          <button onClick={() => onNavigate('chat')} className="flex size-11 items-center justify-center text-primary bg-primary/10 rounded-xl relative">
             <span className="material-symbols-outlined">chat</span>
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-black rounded-full h-4 min-w-[16px] flex items-center justify-center px-1 border-2 border-background-dark">
+                {unreadCount}
+              </span>
+            )}
           </button>
           <button id="settings-gear-btn" onClick={() => onNavigate('room_settings')} className="flex size-11 items-center justify-center text-primary bg-white/5 rounded-xl">
             <span className="material-symbols-outlined">settings</span>

@@ -5,7 +5,7 @@ import { useRoomStore } from '../state/roomStore';
 import { useNotificationStore } from '../state/notificationStore';
 import { AppScreen } from '../types';
 import { useAudioStore } from '../state/audioStore';
-import { speakBingoNumber } from '../lib/speechService';
+import { speakBingoNumber, unlockAudio } from '../lib/speechService';
 import { useTutorialStore } from '../state/tutorialStore';
 import { setNoResume, clearBingolaLocalState } from '../state/persist';
 import { useChatStore } from '../state/chatStore';
@@ -21,6 +21,21 @@ interface Props {
 }
 
 export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, onWin, onNavigate }) => {
+  // Try to unlock audio on mount (might fail on some browsers but harmless) and on first interaction
+  useEffect(() => {
+    const handleInteraction = () => {
+      unlockAudio();
+      window.removeEventListener('click', handleInteraction);
+      window.removeEventListener('touchstart', handleInteraction);
+    };
+    window.addEventListener('click', handleInteraction);
+    window.addEventListener('touchstart', handleInteraction);
+
+    return () => {
+      window.removeEventListener('click', handleInteraction);
+      window.removeEventListener('touchstart', handleInteraction);
+    };
+  }, []);
   const room = useRoomStore(s => s.room);
   const roomId = useRoomStore(s => s.roomId);
   const acceptedList = useRoomStore(s => s.accepted);
@@ -50,6 +65,7 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
   const [showVoiceModal, setShowVoiceModal] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
   const { selectedVoice, setVoice, isNarrationMuted, toggleNarration } = useAudioStore();
+  const unreadCount = useChatStore(s => s.unreadCount);
 
   const winnerChannelRef = useRef<any>(null);
   const finishedAlertedRef = useRef(false);
@@ -61,8 +77,13 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
   // Ensure we are subscribed to the room
   useEffect(() => {
     if (roomId) {
-      const unsub = useRoomStore.getState().subscribe(roomId);
-      return () => unsub();
+      const unsubRoom = useRoomStore.getState().subscribe(roomId);
+      const unsubChat = useChatStore.getState().subscribeToRoom(roomId);
+
+      return () => {
+        unsubRoom();
+        unsubChat();
+      };
     }
   }, [roomId]);
   const handleLeavePermanent = async () => {
@@ -923,8 +944,13 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
             </button>
           )}
 
-          <button onClick={() => onNavigate('chat')} className="size-11 shrink-0 bg-white/5 rounded-2xl flex items-center justify-center text-white/60 active:scale-95 transition-all border border-white/5 shadow-sm">
+          <button onClick={() => onNavigate('chat')} className="size-11 shrink-0 bg-white/5 rounded-2xl flex items-center justify-center text-white/60 active:scale-95 transition-all border border-white/5 shadow-sm relative">
             <span className="material-symbols-outlined text-lg">chat</span>
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-black rounded-full h-4 min-w-[16px] flex items-center justify-center px-1 border-2 border-background-dark">
+                {unreadCount}
+              </span>
+            )}
           </button>
 
           {/* Voice Controls */}

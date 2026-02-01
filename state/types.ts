@@ -39,7 +39,8 @@ export type Participant = {
 export type Message = {
     id: string;
     room_id?: string;
-    sender_id: string;
+    user_id?: string; // for room_messages
+    sender_id?: string; // for direct_messages
     receiver_id?: string;
     content: string;
     created_at: string;

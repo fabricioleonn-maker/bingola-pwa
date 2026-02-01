@@ -5,13 +5,19 @@ import { Message } from './types';
 interface ChatStore {
     roomMessages: Message[];
     directMessages: Record<string, Message[]>; // friendId -> messages
+    unreadCount: number;
+    globalUnreadCount: number;
+    hasUnreadDMs: boolean;
 
     subscribeToRoom: (roomId: string) => () => void;
     sendMessageToRoom: (roomId: string, content: string) => Promise<void>;
+    markRoomAsRead: () => void;
+    resetGlobalUnread: () => void;
 
     sendDirectMessage: (receiverId: string, content: string) => Promise<void>;
     fetchDirectMessages: (friendId: string) => Promise<void>;
     subscribeToDirectMessages: (friendId: string) => () => void;
+    subscribeToGlobalDMs: (myUserId: string) => () => void;
 
     // New: Fetch all unique users I've chatted with
     fetchConversations: () => Promise<any[]>;
@@ -20,6 +26,30 @@ interface ChatStore {
 export const useChatStore = create<ChatStore>((set, get) => ({
     roomMessages: [],
     directMessages: {},
+    unreadCount: 0,
+    globalUnreadCount: 0,
+    hasUnreadDMs: false,
+
+    markRoomAsRead: () => set({ unreadCount: 0 }),
+    resetGlobalUnread: () => set({ globalUnreadCount: 0 }),
+
+    subscribeToGlobalDMs: (myUserId: string) => {
+        const channel = supabase.channel(`global_dms:${myUserId}`)
+            .on('postgres_changes', {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'direct_messages',
+                filter: `receiver_id=eq.${myUserId}`
+            }, () => {
+                set(state => ({
+                    hasUnreadDMs: true,
+                    globalUnreadCount: state.globalUnreadCount + 1
+                }));
+            })
+            .subscribe();
+
+        return () => { supabase.removeChannel(channel); };
+    },
 
     subscribeToRoom: (roomId: string) => {
         const fetchExisting = async () => {
@@ -34,7 +64,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         fetchExisting();
 
         const channel = supabase
-            .channel(`room_chat:${roomId}`)
+            .channel(`room_chat:${roomId}:${Math.random()}`)
             .on('postgres_changes', {
                 event: 'INSERT',
                 schema: 'public',
@@ -48,11 +78,21 @@ export const useChatStore = create<ChatStore>((set, get) => ({
                     .eq('id', payload.new.user_id)
                     .single();
 
+                const { data: { user } } = await supabase.auth.getUser();
+                const currentUserId = user?.id;
+
                 const newMessage = { ...payload.new, profiles: profile } as any;
                 set(state => {
                     // Avoid duplicates
                     if (state.roomMessages.some(m => m.id === newMessage.id)) return state;
-                    return { roomMessages: [...state.roomMessages, newMessage] };
+
+                    // Increment unread count ONLY if message is NOT from me
+                    const isMyMessage = currentUserId && payload.new.user_id === currentUserId;
+
+                    return {
+                        roomMessages: [...state.roomMessages, newMessage],
+                        unreadCount: isMyMessage ? state.unreadCount : state.unreadCount + 1
+                    };
                 });
             })
             .subscribe();

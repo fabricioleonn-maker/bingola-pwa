@@ -8,6 +8,7 @@ const MONETIZATION_API_URL = 'http://localhost:3001';
 interface UserProfile {
     id: string;
     username: string;
+    full_name?: string;
     email?: string;
     bcoins: number;
     bpoints: number;

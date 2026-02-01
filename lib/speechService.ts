@@ -2,6 +2,19 @@
 const synth = window.speechSynthesis;
 let speechQueue: { text: string, voiceType: string }[] = [];
 let isSpeaking = false;
+let isUnlocked = false;
+
+// iOS Safari requires a user interaction to unlock audio context/speech synthesis
+export const unlockAudio = () => {
+    if (isUnlocked || !synth) return;
+
+    // Play a silent utterance
+    const utterance = new SpeechSynthesisUtterance('');
+    utterance.volume = 0;
+    synth.speak(utterance);
+    isUnlocked = true;
+    console.log('[Audio] TTS Unlocked via interaction');
+};
 
 const BALL_PREFIXES = [
     "E lá vem a bola!",

@@ -59,6 +59,12 @@ export const ChatScreen: React.FC<Props> = ({ onBack }) => {
   }, [activeTab, fetchConversations]);
 
   useEffect(() => {
+    if (activeTab === 'table') {
+      useChatStore.getState().markRoomAsRead();
+    }
+  }, [activeTab, messages]);
+
+  useEffect(() => {
     if (roomId) {
       const unsubscribe = subscribe(roomId);
       return () => unsubscribe();

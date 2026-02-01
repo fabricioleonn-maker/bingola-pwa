@@ -24,6 +24,7 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
   const subscribe = useRoomStore(s => s.subscribe);
   const sendFriendRequest = useFriendshipStore(s => s.sendRequest);
   const initiatePrivateChat = useChatStore(s => s.fetchDirectMessages);
+  const unreadCount = useChatStore(s => s.unreadCount);
 
   const [hostProfile, setHostProfile] = useState<any>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
@@ -229,8 +230,13 @@ export const ParticipantLobby: React.FC<Props> = ({ onBack, onNavigate }) => {
             <span className="material-symbols-outlined">music_note</span>
           </button>
 
-          <button onClick={() => onNavigate('chat')} className="flex size-11 items-center justify-center text-primary bg-primary/10 rounded-xl">
+          <button onClick={() => onNavigate('chat')} className="flex size-11 items-center justify-center text-primary bg-primary/10 rounded-xl relative">
             <span className="material-symbols-outlined">chat</span>
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-black rounded-full h-4 min-w-[16px] flex items-center justify-center px-1 border-2 border-background-dark">
+                {unreadCount}
+              </span>
+            )}
           </button>
           <button id="lobby-personalize-btn" onClick={() => onNavigate('customization')} className="flex flex-col items-center gap-1 text-primary">
             <span className="material-symbols-outlined text-2xl">palette</span>
