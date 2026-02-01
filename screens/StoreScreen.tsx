@@ -1,227 +1,37 @@
 
-import React, { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
-import { useNotificationStore } from '../state/notificationStore';
-import { useUserStore } from '../state/userStore';
-import { SubscriptionModal } from '../components/SubscriptionModal';
-import { RewardNotificationModal } from '../components/RewardNotificationModal';
+import { Capacitor } from '@capacitor/core';
 
-interface Props {
-  onBack: () => void;
-}
+// ... existing imports ...
 
 export const StoreScreen: React.FC<Props> = ({ onBack }) => {
-  const { profile, verifyPurchase, refreshProfile, isPremium } = useUserStore();
-  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
-  const [promoCode, setPromoCode] = useState('');
-  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string, discount: number } | null>(null);
-  const [promoError, setPromoError] = useState('');
-  const [referrerId, setReferrerId] = useState<string | null>(null);
-  const [referrerName, setReferrerName] = useState('');
-  const [packages, setPackages] = useState<any[]>([]);
-  const [cart, setCart] = useState<{ id: string, coins: number, price: number, title: string }[]>([]);
-  const [isFinishing, setIsFinishing] = useState(false);
+  const isNative = Capacitor.isNativePlatform();
+  // ... existing hooks ...
 
-  const [showThankYou, setShowThankYou] = useState(false);
-  const [lastPurchase, setLastPurchase] = useState<any>(null);
-  const [globalPromo, setGlobalPromo] = useState<{ active: boolean, label: string, discount: number } | null>(null);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      await refreshProfile();
-
-      // Fetch dynamic products
-      const { data: dbProducts } = await supabase
-        .from('store_products')
-        .select('*')
-        .eq('is_active', true)
-        .order('display_order', { ascending: true });
-
-      if (dbProducts) setPackages(dbProducts);
-
-      // Fetch Global Promo Settings
-      const { data: settings } = await supabase.from('app_settings').select('*').eq('id', 1).single();
-      if (settings && settings.store_promo_active) {
-        setGlobalPromo({
-          active: settings.store_promo_active,
-          label: settings.store_promo_label,
-          discount: settings.store_promo_discount
-        });
-      }
-    };
-    fetchData();
-  }, []);
-
-  const getPackagePrice = (pkg: any) => {
-    let basePrice = pkg.promo_price || pkg.price;
-
-    // Use a melhor promoção disponível (não cumulativa se houver global)
-    if (globalPromo?.active) {
-      basePrice = basePrice * (1 - globalPromo.discount / 100);
-    } else if (isPremium) {
-      // Premium apenas se não houver promoção global ativa
-      basePrice = basePrice * 0.90;
-    }
-
-    return basePrice;
-  };
-
-  const addToCart = (pkg: any) => {
-    const finalPrice = getPackagePrice(pkg);
-    const newItem = {
-      id: Math.random().toString(36).substr(2, 9),
-      coins: pkg.coins,
-      price: finalPrice,
-      title: pkg.title
-    };
-    setCart([...cart, newItem]);
-    useNotificationStore.getState().show(`${pkg.coins} BCOINS adicionados ao carrinho!`, 'info');
-  };
-
-  const removeFromCart = (itemId: string) => {
-    setCart(cart.filter(item => item.id !== itemId));
-  };
-
-  const getGrossTotal = () => cart.reduce((acc, item) => acc + item.price, 0);
-  const getNetTotal = () => {
-    const gross = getGrossTotal();
-    const discount = appliedCoupon ? (appliedCoupon.discount / 100) : 0;
-    return gross * (1 - discount);
-  };
-
-  const getTotalCoins = () => {
-    return cart.reduce((acc, item) => acc + item.coins, 0);
-  };
-
-  const finalizePurchase = async () => {
-    if (cart.length === 0) return;
-    if (!profile) return;
-
-    setIsFinishing(true);
-    let successCount = 0;
-    let totalAdded = 0;
-    let totalSpent = 0;
-
-    try {
-      // Process all items in the cart
-      for (const item of cart) {
-        // Find the catalog product ID
-        let productId = packages.find(p => p.coins === item.coins)?.product_id;
-
-        if (!productId) {
-          console.warn(`[Store] Product ID lookup failed for ${item.coins} coins (Title: ${item.title}). Falling back to 100 pack.`);
-          productId = 'bcoins_pack_100';
-        }
-
-        // Generate a mock token for testing (one per item)
-        const mockToken = `pwa_cart_${Math.random().toString(36).substr(2, 9)}`;
-
-        // Process this item
-        const success = await verifyPurchase('android', 'google_play', productId, mockToken);
-
-        if (success) {
-          successCount++;
-          totalAdded += item.coins;
-          totalSpent += item.price;
-        }
-      }
-
-      if (successCount > 0) {
-        setLastPurchase({
-          coins: totalAdded,
-          total: totalSpent,
-          method: 'Loja Integrada',
-          date: new Date().toLocaleString('pt-BR')
-        });
-
-        // Clear cart only if at least one item succeeded (simplification for UX)
-        setAppliedCoupon(null);
-        setPromoCode('');
-        setReferrerId(null);
-        setCart([]);
-        setShowThankYou(true);
-
-        if (successCount < cart.length) {
-          useNotificationStore.getState().show(`Atenção: ${cart.length - successCount} item(s) falharam no processamento.`, 'error');
-        }
-      } else {
-        // All failed
-      }
-    } catch (err: any) {
-      useNotificationStore.getState().show("Erro ao processar checkout: " + err.message, 'error');
-    } finally {
-      setIsFinishing(false);
-    }
-  };
-
-  const applyPromoCode = async () => {
-    setPromoError('');
-    if (!promoCode.trim() || !profile) return;
-    const code = promoCode.trim().toUpperCase();
-
-    try {
-      // 1. Check Store Coupons Table
-      const { data: coupon } = await supabase
-        .from('store_coupons')
-        .select('*')
-        .eq('code', code)
-        .eq('is_active', true)
-        .maybeSingle();
-
-      if (coupon) {
-        // Check expiration
-        if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) {
-          setPromoError('Este cupom expirou.');
-          return;
-        }
-        // Check usage limit
-        if (coupon.max_uses && coupon.current_uses >= coupon.max_uses) {
-          setPromoError('Este cupom atingiu o limite de usos.');
-          return;
-        }
-
-        setAppliedCoupon({ code: coupon.code, discount: coupon.discount_percent });
-        useNotificationStore.getState().show(`Cupom ${coupon.code} aplicado: ${coupon.discount_percent}% de desconto!`, 'success');
-        return;
-      }
-
-      // 2. Check if code exists as a Referral Code
-      const { data: referrer } = await supabase
-        .from('profiles')
-        .select('id, username')
-        .eq('referral_code', code)
-        .maybeSingle();
-
-      if (!referrer) {
-        setPromoError('Código inválido ou inexistente.');
-        return;
-      }
-
-      // 3. It's a valid referral code, now check if user can use it (1st purchase only)
-      const { data: myProfile } = await supabase.from('profiles').select('referred_by').eq('id', profile.id).single();
-      if (myProfile?.referred_by) {
-        setPromoError('Você já utilizou um código de indicação anteriormente.');
-        return;
-      }
-
-      if (referrer.id === profile.id) {
-        setPromoError('Você não pode usar seu próprio código.');
-        return;
-      }
-
-      setAppliedCoupon({ code: code, discount: 10 }); // Referral is always 10%
-      setReferrerId(referrer.id);
-      setReferrerName(referrer.username || 'Amigo');
-      useNotificationStore.getState().show(`Código de @${referrer.username} aplicado! Válido para sua 1ª compra.`, 'success');
-    } catch (err) {
-      setPromoError('Erro ao validar código.');
-    }
-  };
-
-  // REMOVED static packages array
+  // ... (inside component)
 
   return (
     <div className="flex flex-col min-h-screen bg-background-dark">
+      {/* PWA/Web Blocking Overlay for Purchases */}
+      {!isNative && (
+        <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6 text-center animate-in fade-in duration-500">
+          <div className="bg-surface-dark border border-white/10 rounded-3xl p-8 max-w-sm shadow-2xl relative">
+            <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-yellow-500 p-4 rounded-full shadow-xl shadow-yellow-500/20">
+              <span className="material-symbols-outlined text-black text-4xl">lock</span>
+            </div>
+            <h3 className="text-2xl font-black text-white mt-8 mb-4 uppercase italic">Loja Exclusiva App</h3>
+            <p className="text-white/60 text-sm mb-8 leading-relaxed">
+              As compras de BCOINS só podem ser realizadas através do nosso aplicativo oficial na Play Store para garantir sua segurança.
+            </p>
+            <div className="flex flex-col gap-3">
+              <button onClick={onBack} className="w-full bg-white/10 hover:bg-white/20 text-white font-bold py-3 rounded-xl uppercase text-xs tracking-widest transition-all">
+                Voltar
+              </button>
+              {/* Link to Play Store could be added here later */}
+            </div>
+          </div>
+        </div>
+      )}
+
       <header className="sticky top-0 z-10 bg-background-dark/95 backdrop-blur-md border-b border-white/5 p-4 flex items-center justify-between">
         <button onClick={onBack} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/5 transition-colors">
           <span className="material-symbols-outlined text-white">arrow_back</span>
@@ -232,7 +42,7 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
         </button>
       </header>
 
-      <main className="flex-1 p-4 space-y-8 pb-20">
+      <main className="flex-1 p-4 space-y-8 pb-20 opacity-50 pointer-events-none grayscale">
         <section>
           <h3 className="text-[10px] font-black uppercase tracking-widest text-primary mb-4">Seu Saldo Atual</h3>
           <div className="bg-white/5 border border-white/10 rounded-2xl p-6 flex items-center justify-between shadow-xl">
