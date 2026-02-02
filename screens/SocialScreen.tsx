@@ -105,7 +105,7 @@ export const SocialScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
     };
 
     return (
-        <div className="min-h-[100dvh] bg-background-dark text-white font-sans flex flex-col pb-[env(safe-area-inset-bottom)]">
+        <div className="h-[100dvh] bg-background-dark text-white font-sans flex flex-col overflow-hidden pb-[env(safe-area-inset-bottom)]">
             <header className="sticky top-0 z-50 bg-background-dark/90 backdrop-blur-md border-b border-white/5 p-4">
                 <div className="max-w-md mx-auto flex items-center justify-between">
                     <button onClick={onBack} className="size-12 flex items-center justify-start text-white">

@@ -14,6 +14,7 @@ export const RegisterScreen: React.FC<Props> = ({ onBack, onComplete }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,6 +25,11 @@ export const RegisterScreen: React.FC<Props> = ({ onBack, onComplete }) => {
     // Validações básicas
     if (!name.trim() || !email.trim() || !password || !confirmPassword) {
       setError('Por favor, preencha todos os campos.');
+      return;
+    }
+
+    if (!termsAccepted) {
+      setError('Você deve aceitar os Termos de Uso e Política de Privacidade para continuar.');
       return;
     }
 
@@ -231,10 +237,31 @@ export const RegisterScreen: React.FC<Props> = ({ onBack, onComplete }) => {
             </div>
           )}
 
+          <div className="flex items-start gap-3 px-2">
+            <div className="relative flex items-center">
+              <input
+                type="checkbox"
+                id="terms"
+                checked={termsAccepted}
+                onChange={(e) => setTermsAccepted(e.target.checked)}
+                className="peer h-5 w-5 cursor-pointer appearance-none rounded-md border-2 border-white/20 bg-white/5 transition-all checked:border-primary checked:bg-primary hover:border-white/40"
+              />
+              <span className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-white opacity-0 peer-checked:opacity-100">
+                <span className="material-symbols-outlined text-sm font-bold">check</span>
+              </span>
+            </div>
+            <label htmlFor="terms" className="text-xs text-white/60 cursor-pointer select-none leading-relaxed">
+              Li e concordo com os{' '}
+              <a href="/legal/terms-of-service.html" target="_blank" className="text-primary hover:underline font-bold">Termos de Uso</a>
+              {' '}e a{' '}
+              <a href="/legal/privacy-policy.html" target="_blank" className="text-primary hover:underline font-bold">Política de Privacidade</a>.
+            </label>
+          </div>
+
           <button
             type="submit"
             disabled={loading}
-            className={`w-full h-[66px] bg-gradient-to-r from-primary to-secondary text-white font-black text-lg rounded-[22px] shadow-xl shadow-primary/20 mt-6 active:scale-[0.98] transition-all flex items-center justify-center gap-2 ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
+            className={`w-full h-[66px] bg-gradient-to-r from-primary to-secondary text-white font-black text-lg rounded-[22px] shadow-xl shadow-primary/20 mt-2 active:scale-[0.98] transition-all flex items-center justify-center gap-2 ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
           >
             {loading ? (
               <div className="w-6 h-6 border-3 border-white/30 border-t-white rounded-full animate-spin"></div>

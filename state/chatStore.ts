@@ -9,7 +9,7 @@ interface ChatStore {
     globalUnreadCount: number;
     hasUnreadDMs: boolean;
 
-    subscribeToRoom: (roomId: string) => () => void;
+    subscribeToRoom: (roomId: string, currentUserId: string) => () => void;
     sendMessageToRoom: (roomId: string, content: string) => Promise<void>;
     markRoomAsRead: () => void;
     resetGlobalUnread: () => void;
@@ -51,7 +51,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         return () => { supabase.removeChannel(channel); };
     },
 
-    subscribeToRoom: (roomId: string) => {
+    subscribeToRoom: (roomId: string, currentUserId: string) => {
+        // Reset unread count for the new room session
+        set({ unreadCount: 0, roomMessages: [] });
+
         const fetchExisting = async () => {
             const { data } = await supabase
                 .from('room_messages')
@@ -78,16 +81,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
                     .eq('id', payload.new.user_id)
                     .single();
 
-                const { data: { user } } = await supabase.auth.getUser();
-                const currentUserId = user?.id;
-
                 const newMessage = { ...payload.new, profiles: profile } as any;
                 set(state => {
                     // Avoid duplicates
                     if (state.roomMessages.some(m => m.id === newMessage.id)) return state;
 
                     // Increment unread count ONLY if message is NOT from me
-                    const isMyMessage = currentUserId && payload.new.user_id === currentUserId;
+                    const isMyMessage = payload.new.user_id === currentUserId;
 
                     return {
                         roomMessages: [...state.roomMessages, newMessage],

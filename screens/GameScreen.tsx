@@ -58,6 +58,12 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserProfile, setCurrentUserProfile] = useState<any>(null);
 
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data?.user) setCurrentUserId(data.user.id);
+    });
+  }, []);
+
   const [isMaster, setIsMaster] = useState(false);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [showRoomClosed, setShowRoomClosed] = useState(false);
@@ -74,18 +80,23 @@ export const GameScreen: React.FC<Props> = ({ roomInfo: propRoomInfo, onBack, on
   const [securityRetries, setSecurityRetries] = useState(0);
   const securityWaitRef = useRef(false);
 
+  const effectiveRoomId = roomId || room?.id || propRoomInfo?.id;
+
   // Ensure we are subscribed to the room
   useEffect(() => {
-    if (roomId) {
-      const unsubRoom = useRoomStore.getState().subscribe(roomId);
-      const unsubChat = useChatStore.getState().subscribeToRoom(roomId);
+    if (effectiveRoomId && currentUserId) {
+      // Ensure store has the ID if missing
+      if (!roomId) useRoomStore.getState().setRoomId(effectiveRoomId);
+
+      const unsubRoom = useRoomStore.getState().subscribe(effectiveRoomId);
+      const unsubChat = useChatStore.getState().subscribeToRoom(effectiveRoomId, currentUserId);
 
       return () => {
         unsubRoom();
         unsubChat();
       };
     }
-  }, [roomId]);
+  }, [effectiveRoomId, roomId, currentUserId]);
   const handleLeavePermanent = async () => {
     if (currentUserId && roomId) {
       try {

@@ -65,11 +65,11 @@ export const ChatScreen: React.FC<Props> = ({ onBack }) => {
   }, [activeTab, messages]);
 
   useEffect(() => {
-    if (roomId) {
-      const unsubscribe = subscribe(roomId);
+    if (roomId && currentUserId) {
+      const unsubscribe = subscribe(roomId, currentUserId);
       return () => unsubscribe();
     }
-  }, [roomId, subscribe]);
+  }, [roomId, currentUserId, subscribe]);
 
   const handleSend = async () => {
     if (!msg.trim()) return;

@@ -91,7 +91,7 @@ export const useAudioStore = create<AudioState>()(
             setDucked: (isDucked) => set({ isDucked }),
             isNarrationMuted: false,
             toggleNarration: () => set((state) => ({ isNarrationMuted: !state.isNarrationMuted })),
-            selectedVoice: 'vovo',
+            selectedVoice: 'radio',
             setVoice: (voice) => set({ selectedVoice: voice }),
             playSfx: (type) => {
                 const s = get();

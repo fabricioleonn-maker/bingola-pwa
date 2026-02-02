@@ -39,18 +39,25 @@ const processQueue = () => {
     // Get voices
     let voices = synth.getVoices();
     const ptVoices = voices.filter(v => v.lang.startsWith('pt'));
-    const premiumVoice = ptVoices.find(v => v.name.includes('Google') || v.name.includes('Luciana') || v.name.includes('Daniel'));
+
+    // Improved Strategy: Priority on known good voices, then ANY PT voice
+    const premiumVoice = ptVoices.find(v =>
+        v.name.includes('Luciana') || // iOS
+        v.name.includes('Joana') || // iOS
+        v.name.includes('Google') || // Android/Chrome
+        v.name.includes('Daniel') // Classic
+    );
     const ptVoice = premiumVoice || ptVoices[0] || voices.find(v => v.default);
 
     if (ptVoice) utterance.voice = ptVoice;
 
     // Persona-based settings
     if (next.voiceType === 'vovo') {
-        utterance.rate = 0.85;
-        utterance.pitch = 1.1;
+        utterance.rate = 0.7; // Slower
+        utterance.pitch = 0.6; // Deeper (Elderly effect)
     } else if (next.voiceType === 'radio') {
-        utterance.rate = 1.15;
-        utterance.pitch = 1.05;
+        utterance.rate = 1.2;
+        utterance.pitch = 1.0;
         // energetic volume
         utterance.volume = 1.0;
     } else {

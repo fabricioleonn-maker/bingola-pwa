@@ -37,10 +37,10 @@ export const FloatingChat: React.FC<Props> = ({ bottomOffset = '0px' }) => {
 
     // Subscribe to Room via Store
     useEffect(() => {
-        if (!roomId) return;
-        const unsubscribe = subscribeToRoom(roomId);
+        if (!roomId || !currentUserId) return;
+        const unsubscribe = subscribeToRoom(roomId, currentUserId);
         return () => unsubscribe();
-    }, [roomId, subscribeToRoom]);
+    }, [roomId, currentUserId, subscribeToRoom]);
 
     // Handle Read Status
     useEffect(() => {
