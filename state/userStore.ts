@@ -28,6 +28,7 @@ interface UserStore {
     setEditMode: (active: boolean) => void;
     editingElement: { id: string, text: string } | null;
     setEditingElement: (el: { id: string, text: string } | null) => void;
+    logout: () => void;
     refreshProfile: () => Promise<void>;
     verifyPurchase: (platform: 'android' | 'ios', store: 'google_play' | 'apple_app_store', productId: string, token: string) => Promise<boolean>;
     debitCoins: (amount: number, reason: string) => Promise<boolean>;
@@ -43,6 +44,8 @@ export const useUserStore = create<UserStore>((set, get) => ({
 
     setEditMode: (active) => set({ isEditMode: active }),
     setEditingElement: (el) => set({ editingElement: el }),
+
+    logout: () => set({ profile: null }),
 
     refreshProfile: async () => {
         const { data: { user } } = await supabase.auth.getUser();

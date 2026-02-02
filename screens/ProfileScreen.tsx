@@ -150,6 +150,17 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
     }
   };
 
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+      useUserStore.getState().logout();
+      window.location.reload();
+    } catch (error) {
+      console.error('Error logging out:', error);
+      window.location.reload();
+    }
+  };
+
   const handleDeleteAccount = async () => {
     if (!window.confirm('Tem certeza? Essa ação não pode ser desfeita.')) return;
     try {
@@ -169,7 +180,9 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
           <span className="material-symbols-outlined text-white/60">arrow_back</span>
         </button>
         <h2 className="text-sm font-black uppercase tracking-widest text-white/40">Meu Perfil</h2>
-        <div className="w-10"></div>
+        <button onClick={handleLogout} className="w-10 h-10 flex items-center justify-center rounded-full bg-red-500/10 text-red-500 active:scale-95 transition-all outline-none">
+          <span className="material-symbols-outlined text-[20px]">logout</span>
+        </button>
       </header>
 
       <main className="flex-1 px-6 pb-32 overflow-y-auto no-scrollbar">
@@ -331,15 +344,13 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
             Voke Games - Todos os direitos reservados
           </div>
 
-          <div className="pt-8 pb-4 flex flex-col items-center">
-            <button
-              onClick={handleDeleteAccount}
-              className="group flex flex-col items-center gap-1 opacity-40 hover:opacity-100 transition-opacity"
-            >
-              <span className="text-xs font-bold text-red-500/80 group-hover:text-red-500">Excluir conta</span>
-              <span className="text-[9px] font-black uppercase tracking-widest text-red-500/40">Ação Irreversível</span>
-            </button>
-          </div>
+          <button
+            onClick={handleDeleteAccount}
+            className="group flex flex-col items-center gap-1 opacity-40 hover:opacity-100 transition-opacity"
+          >
+            <span className="text-xs font-bold text-red-500/80 group-hover:text-red-500">Excluir conta</span>
+            <span className="text-[9px] font-black uppercase tracking-widest text-red-500/40">Ação Irreversível</span>
+          </button>
         </div>
       </main>
 
@@ -366,90 +377,94 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
         </button>
       </nav>
 
-      {showPasswordModal && (
-        <div className="fixed inset-0 z-[400] bg-background-dark/95 backdrop-blur-xl flex flex-col animate-in fade-in duration-300">
-          <header style={{ paddingTop: 'env(safe-area-inset-top)' }} className="p-4 border-b border-white/5 flex items-center justify-between">
-            <button onClick={() => { setShowPasswordModal(false); setNewPassword(''); setConfirmPassword(''); }} className="w-10 h-10 flex items-center justify-center">
-              <span className="material-symbols-outlined text-white">close</span>
-            </button>
-            <h3 className="font-black italic uppercase tracking-widest text-sm">Alterar Senha</h3>
-            <div className="w-10"></div>
-          </header>
-          <main className="flex-1 p-6 space-y-8 flex flex-col justify-center max-w-md mx-auto w-full">
-            <div className="text-center space-y-2">
-              <div className="w-16 h-16 bg-blue-500/20 rounded-3xl flex items-center justify-center mx-auto mb-4">
-                <span className="material-symbols-outlined text-blue-500 text-3xl">lock</span>
+      {
+        showPasswordModal && (
+          <div className="fixed inset-0 z-[400] bg-background-dark/95 backdrop-blur-xl flex flex-col animate-in fade-in duration-300">
+            <header style={{ paddingTop: 'env(safe-area-inset-top)' }} className="p-4 border-b border-white/5 flex items-center justify-between">
+              <button onClick={() => { setShowPasswordModal(false); setNewPassword(''); setConfirmPassword(''); }} className="w-10 h-10 flex items-center justify-center">
+                <span className="material-symbols-outlined text-white">close</span>
+              </button>
+              <h3 className="font-black italic uppercase tracking-widest text-sm">Alterar Senha</h3>
+              <div className="w-10"></div>
+            </header>
+            <main className="flex-1 p-6 space-y-8 flex flex-col justify-center max-w-md mx-auto w-full">
+              <div className="text-center space-y-2">
+                <div className="w-16 h-16 bg-blue-500/20 rounded-3xl flex items-center justify-center mx-auto mb-4">
+                  <span className="material-symbols-outlined text-blue-500 text-3xl">lock</span>
+                </div>
+                <h2 className="text-xl font-black uppercase italic italic tracking-tighter">Escolha sua nova senha</h2>
+                <p className="text-xs text-white/40 font-medium">As alterações serão aplicadas instantaneamente.</p>
               </div>
-              <h2 className="text-xl font-black uppercase italic italic tracking-tighter">Escolha sua nova senha</h2>
-              <p className="text-xs text-white/40 font-medium">As alterações serão aplicadas instantaneamente.</p>
-            </div>
-            <div className="space-y-4">
-              <div className="relative">
-                <label className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-2 block pl-1">Nova Senha</label>
+              <div className="space-y-4">
                 <div className="relative">
-                  <input type={showPass ? 'text' : 'password'} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Mínimo 6 caracteres" className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-4 text-white placeholder:text-white/20 focus:outline-none focus:border-primary transition-colors" />
-                  <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors">
-                    <span className="material-symbols-outlined">{showPass ? 'visibility_off' : 'visibility'}</span>
-                  </button>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-2 block pl-1">Nova Senha</label>
+                  <div className="relative">
+                    <input type={showPass ? 'text' : 'password'} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Mínimo 6 caracteres" className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-4 text-white placeholder:text-white/20 focus:outline-none focus:border-primary transition-colors" />
+                    <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors">
+                      <span className="material-symbols-outlined">{showPass ? 'visibility_off' : 'visibility'}</span>
+                    </button>
+                  </div>
+                </div>
+                <div className="relative">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-2 block pl-1">Confirmar Senha</label>
+                  <div className="relative">
+                    <input type={showConfirmPass ? 'text' : 'password'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Repita a nova senha" className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-4 text-white placeholder:text-white/20 focus:outline-none focus:border-primary transition-colors" />
+                    <button type="button" onClick={() => setShowConfirmPass(!showConfirmPass)} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors">
+                      <span className="material-symbols-outlined">{showConfirmPass ? 'visibility_off' : 'visibility'}</span>
+                    </button>
+                  </div>
                 </div>
               </div>
-              <div className="relative">
-                <label className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-2 block pl-1">Confirmar Senha</label>
-                <div className="relative">
-                  <input type={showConfirmPass ? 'text' : 'password'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Repita a nova senha" className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-4 text-white placeholder:text-white/20 focus:outline-none focus:border-primary transition-colors" />
-                  <button type="button" onClick={() => setShowConfirmPass(!showConfirmPass)} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors">
-                    <span className="material-symbols-outlined">{showConfirmPass ? 'visibility_off' : 'visibility'}</span>
-                  </button>
+              <div className="space-y-4 pt-4">
+                <button onClick={handleUpdatePassword} disabled={isChangingPassword} className="w-full bg-primary text-black font-black uppercase tracking-widest py-4 rounded-2xl shadow-lg active:scale-95 transition-all disabled:opacity-50">
+                  {isChangingPassword ? 'Salvando...' : 'Salvar Nova Senha'}
+                </button>
+                <div className="relative py-2">
+                  <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/5"></div></div>
+                  <div className="relative flex justify-center text-[10px] uppercase font-black tracking-widest"><span className="bg-background-dark px-4 text-white/20">Ou</span></div>
                 </div>
+                <button onClick={handleChangePassword} disabled={isChangingPassword} className="w-full bg-white/5 border border-white/10 text-white font-black uppercase tracking-widest py-4 rounded-2xl active:scale-95 transition-all disabled:opacity-50">
+                  {isChangingPassword ? 'Enviando...' : 'Receber link por e-mail'}
+                </button>
+                <p className="text-[10px] text-white/20 text-center uppercase font-black tracking-widest">Use esta opção se esqueceu a senha atual</p>
               </div>
-            </div>
-            <div className="space-y-4 pt-4">
-              <button onClick={handleUpdatePassword} disabled={isChangingPassword} className="w-full bg-primary text-black font-black uppercase tracking-widest py-4 rounded-2xl shadow-lg active:scale-95 transition-all disabled:opacity-50">
-                {isChangingPassword ? 'Salvando...' : 'Salvar Nova Senha'}
-              </button>
-              <div className="relative py-2">
-                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/5"></div></div>
-                <div className="relative flex justify-center text-[10px] uppercase font-black tracking-widest"><span className="bg-background-dark px-4 text-white/20">Ou</span></div>
-              </div>
-              <button onClick={handleChangePassword} disabled={isChangingPassword} className="w-full bg-white/5 border border-white/10 text-white font-black uppercase tracking-widest py-4 rounded-2xl active:scale-95 transition-all disabled:opacity-50">
-                {isChangingPassword ? 'Enviando...' : 'Receber link por e-mail'}
-              </button>
-              <p className="text-[10px] text-white/20 text-center uppercase font-black tracking-widest">Use esta opção se esqueceu a senha atual</p>
-            </div>
-          </main>
-        </div>
-      )}
+            </main>
+          </div>
+        )
+      }
 
-      {showExtrato && (
-        <div className="fixed inset-0 z-[300] bg-background-dark/95 backdrop-blur-xl flex flex-col animate-in fade-in duration-300">
-          <header style={{ paddingTop: 'env(safe-area-inset-top)' }} className="p-4 border-b border-white/5 flex items-center justify-between">
-            <button onClick={() => setShowExtrato(false)} className="w-10 h-10 flex items-center justify-center">
-              <span className="material-symbols-outlined text-white">close</span>
-            </button>
-            <h3 className="font-black italic uppercase tracking-widest text-sm">Extrato Geral</h3>
-            <div className="w-10"></div>
-          </header>
-          <main className="flex-1 overflow-y-auto p-6 space-y-4">
-            {transactions.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-white/20 space-y-4">
-                <span className="material-symbols-outlined text-6xl">receipt_long</span>
-                <p className="font-black uppercase tracking-widest text-xs">Nenhuma movimentação</p>
-              </div>
-            ) : transactions.map((tx: any) => (
-              <div key={tx.id} className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-between">
-                <div className="space-y-1">
-                  <p className="text-[10px] font-black text-white/30 uppercase tracking-widest">@{tx.profiles?.username || 'user'}</p>
-                  <p className="text-xs font-bold text-white/60">{tx.reason || 'Movimentação'}</p>
-                  <p className="text-[8px] text-white/20 uppercase font-black">{new Date(tx.created_at).toLocaleString('pt-BR')}</p>
+      {
+        showExtrato && (
+          <div className="fixed inset-0 z-[300] bg-background-dark/95 backdrop-blur-xl flex flex-col animate-in fade-in duration-300">
+            <header style={{ paddingTop: 'env(safe-area-inset-top)' }} className="p-4 border-b border-white/5 flex items-center justify-between">
+              <button onClick={() => setShowExtrato(false)} className="w-10 h-10 flex items-center justify-center">
+                <span className="material-symbols-outlined text-white">close</span>
+              </button>
+              <h3 className="font-black italic uppercase tracking-widest text-sm">Extrato Geral</h3>
+              <div className="w-10"></div>
+            </header>
+            <main className="flex-1 overflow-y-auto p-6 space-y-4">
+              {transactions.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-white/20 space-y-4">
+                  <span className="material-symbols-outlined text-6xl">receipt_long</span>
+                  <p className="font-black uppercase tracking-widest text-xs">Nenhuma movimentação</p>
                 </div>
-                <div className={`text-lg font-black ${tx.amount > 0 ? 'text-green-500' : 'text-red-500'}`}>
-                  {tx.amount > 0 ? '+' : ''}{tx.amount}
+              ) : transactions.map((tx: any) => (
+                <div key={tx.id} className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-between">
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-black text-white/30 uppercase tracking-widest">@{tx.profiles?.username || 'user'}</p>
+                    <p className="text-xs font-bold text-white/60">{tx.reason || 'Movimentação'}</p>
+                    <p className="text-[8px] text-white/20 uppercase font-black">{new Date(tx.created_at).toLocaleString('pt-BR')}</p>
+                  </div>
+                  <div className={`text-lg font-black ${tx.amount > 0 ? 'text-green-500' : 'text-red-500'}`}>
+                    {tx.amount > 0 ? '+' : ''}{tx.amount}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </main>
-        </div>
-      )}
-    </div>
+              ))}
+            </main>
+          </div>
+        )
+      }
+    </div >
   );
 };
