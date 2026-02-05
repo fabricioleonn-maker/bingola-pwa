@@ -9,10 +9,13 @@ if (!supabaseUrl || !supabaseAnonKey) {
     console.error('Supabase credentials missing! Check your .env.local file.');
 }
 
+import CapacitorStorage from './storageAdapter';
+
 export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
     auth: {
         persistSession: true,
         autoRefreshToken: true,
-        detectSessionInUrl: true
+        detectSessionInUrl: true,
+        storage: CapacitorStorage,
     }
 });

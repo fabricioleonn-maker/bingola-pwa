@@ -61,6 +61,11 @@ const BackgroundMusic: React.FC<Props> = ({ currentScreen }) => {
                         audioRef.current?.pause();
                     }
                 }).catch(() => { });
+
+                // Unlock Speech Synthesis (TTS) as well
+                import('../lib/speechService').then(({ unlockAudio }) => {
+                    unlockAudio();
+                });
             }
         };
 

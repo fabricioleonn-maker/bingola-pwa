@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
+import { Capacitor } from '@capacitor/core';
+import { Camera } from '@capacitor/camera';
 
 interface QRScannerProps {
     onScan: (decodedText: string) => void;
@@ -15,17 +17,39 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
     const regionId = "qr-reader";
     const isMounted = useRef(true);
 
+    const checkCameraPermission = async () => {
+        if (!Capacitor.isNativePlatform()) return true;
+        try {
+            const status = await Camera.checkPermissions();
+            if (status.camera !== 'granted') {
+                const request = await Camera.requestPermissions({ permissions: ['camera'] });
+                return request.camera === 'granted';
+            }
+            return true;
+        } catch (e) {
+            console.warn("[QRScanner] Permission check error:", e);
+            return false;
+        }
+    };
+
     // Initial Setup
     useEffect(() => {
         isMounted.current = true;
 
-        // Essential check for Camera API
-        if (!window.isSecureContext && !window.location.hostname.includes('localhost')) {
-            setStatus('insecure');
-            return;
-        }
-
         const initScanner = async () => {
+            // Native Permission Check
+            const hasPermission = await checkCameraPermission();
+            if (!hasPermission) {
+                setStatus('permission');
+                return;
+            }
+
+            // Essential check for Camera API
+            if (!Capacitor.isNativePlatform() && !window.isSecureContext && !window.location.hostname.includes('localhost')) {
+                setStatus('insecure');
+                return;
+            }
+
             // Destroy existing instance if any
             if (scannerRef.current) {
                 try {
@@ -50,12 +74,10 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
                     /back|rear|traseira|environment/i.test(device.label || '')
                 );
 
-                // If not found by label, usually the last one on mobile is back
                 if (backCameraIndex === -1 && devices.length > 1) {
                     backCameraIndex = devices.length - 1;
                 }
 
-                // If still -1, default to 0
                 const initialIndex = backCameraIndex === -1 ? 0 : backCameraIndex;
                 setCurrentCameraIndex(initialIndex);
 
@@ -72,7 +94,7 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
             }
         };
 
-        const timer = setTimeout(initScanner, 300); // Slight delay for DOM
+        const timer = setTimeout(initScanner, 300);
 
         return () => {
             isMounted.current = false;
@@ -116,7 +138,6 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
         } catch (e) {
             console.warn("Start error:", e);
             if (isMounted.current) {
-                // Try fallback to broad environment
                 try {
                     await scanner.start(
                         { facingMode: "environment" },
@@ -200,7 +221,6 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
                 {status === 'active' && (
                     <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
                         <div className="w-64 h-64 border-2 border-white/20 rounded-3xl relative">
-                            {/* Target Corners */}
                             <div className="absolute -top-1 -left-1 w-8 h-8 border-t-4 border-l-4 border-primary rounded-tl-xl" />
                             <div className="absolute -top-1 -right-1 w-8 h-8 border-t-4 border-r-4 border-primary rounded-tr-xl" />
                             <div className="absolute -bottom-1 -left-1 w-8 h-8 border-b-4 border-l-4 border-primary rounded-bl-xl" />

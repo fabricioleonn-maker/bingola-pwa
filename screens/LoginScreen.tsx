@@ -16,6 +16,12 @@ export const LoginScreen: React.FC<LoginProps> = ({ onLogin, onGoToRegister }) =
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
+  // Auto-fill email if previously saved
+  React.useEffect(() => {
+    const savedEmail = localStorage.getItem('bingola_last_email');
+    if (savedEmail) setEmail(savedEmail);
+  }, []);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
@@ -43,7 +49,10 @@ export const LoginScreen: React.FC<LoginProps> = ({ onLogin, onGoToRegister }) =
         return;
       }
 
-      // Success! App.tsx will handle the session change
+      // Success! Save email for next time
+      localStorage.setItem('bingola_last_email', email);
+
+      // App.tsx will handle the session change
       useAudioStore.getState().setGenre('00INTRO');
       useAudioStore.setState({ currentTrackIndex: 1, isPlaying: true });
       onLogin();
@@ -212,7 +221,11 @@ export const LoginScreen: React.FC<LoginProps> = ({ onLogin, onGoToRegister }) =
           </div>
 
           <div className="grid grid-cols-2 gap-4 w-full">
-            <button className="flex items-center justify-center h-[56px] rounded-2xl bg-white text-black hover:bg-gray-100 transition-all active:scale-[0.98] shadow-sm">
+            <button
+              onClick={() => useNotificationStore.getState().show('Em breve! Login com Google em desenvolvimento.', 'info')}
+              className="flex items-center justify-center h-[56px] rounded-2xl bg-white text-black hover:bg-gray-100 transition-all active:scale-[0.98] shadow-sm"
+              type="button"
+            >
               <svg className="w-5 h-5 mr-3" viewBox="0 0 24 24">
                 <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"></path>
                 <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"></path>
@@ -221,9 +234,13 @@ export const LoginScreen: React.FC<LoginProps> = ({ onLogin, onGoToRegister }) =
               </svg>
               <span className="font-bold text-sm">Google</span>
             </button>
-            <button className="flex items-center justify-center h-[56px] rounded-2xl bg-white text-black hover:bg-gray-100 transition-all active:scale-[0.98] shadow-sm">
+            <button
+              onClick={() => useNotificationStore.getState().show('Em breve! Login com Apple em desenvolvimento.', 'info')}
+              className="flex items-center justify-center h-[56px] rounded-2xl bg-white text-black hover:bg-gray-100 transition-all active:scale-[0.98] shadow-sm"
+              type="button"
+            >
               <svg className="w-5 h-5 mr-3" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.844-1.026 1.402-2.441 1.247-3.83-1.183.052-2.61.793-3.461 1.79-.767.883-1.442 2.325-1.261 3.676 1.326.104 2.636-.61 3.475-1.636z" fill="black" />
+                <path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.844-1.026 1.402-2.411 1.247-3.83-1.183.052-2.61.793-3.461 1.79-.767.883-1.442 2.325-1.261 3.676 1.326.104 2.636-.61 3.475-1.636z" fill="black" />
               </svg>
               <span className="font-bold text-sm">Apple</span>
             </button>

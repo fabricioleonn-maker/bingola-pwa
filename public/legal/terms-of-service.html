@@ -325,30 +325,31 @@
             <p><strong>Obrigado por jogar Bingola! Divirta-se e jogue com responsabilidade.</strong> 🎲✨</p>
         </div>
     </div>
-    <!-- Floating Close Button -->
-    <button onclick="window.close(); window.history.back()" style="
+
+</html>
+<!-- Floating Close Button -->
+<button onclick="window.close(); window.history.back()" style="
         position: fixed;
-        bottom: 24px;
+        top: 24px;
         right: 24px;
-        background: #ff386c;
-        color: white;
+        background: rgba(0, 0, 0, 0.05);
+        color: #333;
         border: none;
-        width: 60px;
-        height: 60px;
+        width: 48px;
+        height: 48px;
         border-radius: 50%;
         cursor: pointer;
-        box-shadow: 0 8px 20px rgba(255, 56, 108, 0.5);
         display: flex;
         align-items: center;
         justify-content: center;
         z-index: 9999;
-        transition: transform 0.2s, box-shadow 0.2s;
+        transition: background 0.2s;
         outline: none;
-    " onmouseover="this.style.transform='scale(1.1)'; this.style.boxShadow='0 12px 24px rgba(255, 56, 108, 0.6)'"
-        onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 8px 20px rgba(255, 56, 108, 0.5)'">
-        <!-- Material Symbol -->
-        <span class="material-symbols-outlined" style="font-size: 32px; color: white;">arrow_back</span>
-    </button>
+    " onmouseover="this.style.background='rgba(0, 0, 0, 0.1)'"
+    onmouseout="this.style.background='rgba(0, 0, 0, 0.05)'">
+    <!-- Material Symbol -->
+    <span class="material-symbols-outlined" style="font-size: 24px;">close</span>
+</button>
 </body>
 
 </html>

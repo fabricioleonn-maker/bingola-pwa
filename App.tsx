@@ -41,10 +41,32 @@ import GlobalMusicHeader from './components/GlobalMusicHeader';
 import TutorialOverlay from './components/TutorialOverlay';
 import { RewardNotificationModal } from './components/RewardNotificationModal';
 import { UIEditorModal } from './components/UIEditorModal';
+import { useAudioStore } from './state/audioStore';
 import { useUILabels } from './state/uiLabelsStore';
+import { Capacitor } from '@capacitor/core';
+import { StatusBar, Style } from '@capacitor/status-bar';
 
 const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>('splash');
+
+  // Handle Native StatusBar/NavigationBar on Android
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      const setupNativeUI = async () => {
+        try {
+          // Make status bar transparent and overlay
+          await StatusBar.setOverlaysWebView({ overlay: true });
+          await StatusBar.setStyle({ style: Style.Dark });
+
+          // Note: On Android, navigation bar color is often controlled via styles.xml 
+          // or third party plugins, but ensuring cover viewport takes care of most cases.
+        } catch (e) {
+          console.warn("[Native] UI setup error:", e);
+        }
+      };
+      setupNativeUI();
+    }
+  }, []);
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [customReturnScreen, setCustomReturnScreen] = useState<AppScreen>('home');
@@ -138,6 +160,13 @@ const App: React.FC = () => {
   const { show: showNotify } = useNotificationStore();
 
   useEffect(() => {
+    // Force volume update for existing users (migration from 0.15 to 0.07)
+    const currentVol = useAudioStore.getState().volume;
+    if (currentVol === 0.15) {
+      console.log("[Audio] Migrating volume from 0.15 to 0.07");
+      useAudioStore.setState({ volume: 0.07 });
+    }
+
     // 1. Check initial session
     const initSession = async () => {
       const hashParams = new URLSearchParams(window.location.hash.substring(1));

@@ -98,7 +98,14 @@ export const useFriendshipStore = create<FriendshipStore>((set, get) => ({
             .neq('id', user?.id)
             .limit(10);
 
-        return data || [];
+        const s = get();
+        const existingIds = new Set([
+            ...s.friends.map(f => f.friend_id),
+            ...s.pendingIncoming.map(f => f.user_id),
+            ...s.pendingOutgoing.map(f => f.friend_id)
+        ]);
+
+        return (data || []).filter(u => !existingIds.has(u.id));
     },
 
     sendRequest: async (friendId) => {

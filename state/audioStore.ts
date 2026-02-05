@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 
 export type MusicGenre = '00INTRO' | '01RELAXANTE' | '02CLÁSSICO' | '03MODERNO' | '04ELETRONICO';
 
@@ -55,7 +55,7 @@ export const useAudioStore = create<AudioState>()(
         (set, get) => ({
             isMuted: false,
             isPlaying: false,
-            volume: 0.15,
+            volume: 0.07,
             currentGenre: '00INTRO',
             introRequested: false,
             currentTrackIndex: 0, // Now refers to array index
@@ -114,6 +114,8 @@ export const useAudioStore = create<AudioState>()(
         }),
         {
             name: 'bingola-audio-storage',
+            version: 1, // Start versioning
+            storage: createJSONStorage(() => localStorage),
             migrate: (persistedState: any, version: number) => {
                 // Migration logic to reset genre if it's legacy
                 const genres = ['00INTRO', '01RELAXANTE', '02CLÁSSICO', '03MODERNO', '04ELETRONICO'];

@@ -19,30 +19,19 @@ export const SubscriptionModal: React.FC<Props> = ({ isOpen, onClose }) => {
     const handleSubscribe = async () => {
         setLoading(true);
         try {
-            const nextMonth = new Date();
-            nextMonth.setDate(nextMonth.getDate() + 30);
+            // Trigger the real IAP flow
+            // The success logic (updating the DB) will be handled by the iapService listeners
+            // which verify the receipt with the backend.
+            import('../services/iap').then(({ iapService }) => {
+                iapService.order('bingola_premium_monthly');
+            });
 
-            const { error } = await supabase
-                .from('profiles')
-                .update({ subscription_end_date: nextMonth.toISOString() })
-                .eq('id', profile?.id);
-
-            if (error) {
-                console.error('Erro detalhado:', error);
-                throw new Error(error.message || 'Falha ao atualizar assinatura');
-            }
-
-            await refreshProfile();
-            show('Parabéns! Você agora é PREMIUM!', 'success');
-            onClose();
+            // Note: We don't close the modal immediately here, 
+            // as we want to wait for the purchase to complete.
+            // You might want to listen to purchase events to close it.
         } catch (err: any) {
             console.error(err);
-            if (err.message?.includes('column "subscription_end_date" of relation "profiles" does not exist')) {
-                show('Erro: O banco de dados precisa ser atualizado (SQL).', 'error');
-            } else {
-                show('Erro ao processar assinatura. Tente novamente.', 'error');
-            }
-        } finally {
+            show('Erro ao iniciar assinatura. Tente novamente.', 'error');
             setLoading(false);
         }
     };
