@@ -84,8 +84,10 @@ export const PlayerManagementScreen: React.FC<Props> = ({ onBack }) => {
                 'success'
             );
 
-            // Refresh local selected player state
-            setSelectedPlayer({ ...selectedPlayer, bcoins: (selectedPlayer.bcoins || 0) + finalAmount });
+            // Refresh local state
+            const updatedPlayer = { ...selectedPlayer, bcoins: (selectedPlayer.bcoins || 0) + finalAmount };
+            setSelectedPlayer(updatedPlayer);
+            setSearchResults(prev => prev.map(p => p.id === selectedPlayer.id ? updatedPlayer : p));
             setAmount('');
         } catch (err: any) {
             useNotificationStore.getState().show("Falha: " + err.message, 'error');
@@ -95,7 +97,12 @@ export const PlayerManagementScreen: React.FC<Props> = ({ onBack }) => {
     };
 
     const resetBPoints = async () => {
-        if (!selectedPlayer || !isMaster) return;
+        if (!selectedPlayer) return;
+
+        if (!isMaster) {
+            useNotificationStore.getState().show("Ação permitida apenas para Masters", 'error');
+            return;
+        }
 
         useNotificationStore.getState().confirm({
             title: "Resetar BPoints?",
@@ -111,9 +118,13 @@ export const PlayerManagementScreen: React.FC<Props> = ({ onBack }) => {
                     if (error) throw error;
 
                     useNotificationStore.getState().show(`BPoints de @${selectedPlayer.username} resetados!`, 'success');
-                    setSelectedPlayer({ ...selectedPlayer, bpoints: 0 });
+
+                    // Sync both states
+                    const updatedPlayer = { ...selectedPlayer, bpoints: 0 };
+                    setSelectedPlayer(updatedPlayer);
+                    setSearchResults(prev => prev.map(p => p.id === selectedPlayer.id ? updatedPlayer : p));
                 } catch (err: any) {
-                    useNotificationStore.getState().show(err.message, 'error');
+                    useNotificationStore.getState().show("Erro ao resetar: " + err.message, 'error');
                 } finally {
                     setIsUpdating(false);
                 }
@@ -129,12 +140,12 @@ export const PlayerManagementScreen: React.FC<Props> = ({ onBack }) => {
                 </button>
                 <div className="flex flex-col items-center">
                     <h2 className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-500">Jogadores</h2>
-                    <p className="text-sm font-black italic uppercase">Gestão de Perfis</p>
+                    <p className="text-sm font-black italic uppercase">Gestão de Perfis v1.1</p>
                 </div>
                 <div className="w-10"></div>
             </header>
 
-            <main className="flex-1 overflow-y-auto px-6 py-8 space-y-8 pb-32">
+            <main className="flex-1 overflow-y-auto px-4 sm:px-6 py-8 space-y-8 pb-32">
                 {/* Search Section */}
                 <section className="space-y-4">
                     <div className="flex gap-2">
@@ -184,7 +195,7 @@ export const PlayerManagementScreen: React.FC<Props> = ({ onBack }) => {
                 {/* Management Panel */}
                 {selectedPlayer && (
                     <section className="space-y-6 animate-in fade-in zoom-in-95 duration-300">
-                        <div className="bg-white/5 border border-white/10 rounded-[2.5rem] p-6 relative overflow-hidden">
+                        <div className="bg-white/5 border border-white/10 rounded-[2rem] p-4 sm:p-6 relative overflow-hidden">
                             <button
                                 onClick={() => setSelectedPlayer(null)}
                                 className="absolute top-4 right-4 text-white/20 hover:text-white"
@@ -214,27 +225,27 @@ export const PlayerManagementScreen: React.FC<Props> = ({ onBack }) => {
                             {/* BCOINS Control */}
                             <div className="space-y-4">
                                 <p className="text-[10px] font-black text-white/20 uppercase tracking-widest px-2">Ajustar BCOINS</p>
-                                <div className="flex gap-2 items-center">
+                                <div className="flex gap-1.5 items-center">
                                     <button
                                         onClick={() => updateBCOINS('withdraw')}
                                         disabled={isUpdating}
-                                        className="w-14 h-14 bg-red-500/10 border border-red-500/20 text-red-500 rounded-2xl flex items-center justify-center active:scale-95 transition-all flex-shrink-0"
+                                        className="size-12 bg-red-500/10 border border-red-500/20 text-red-500 rounded-xl flex items-center justify-center active:scale-95 transition-all flex-shrink-0"
                                     >
-                                        <span className="material-symbols-outlined text-3xl">remove</span>
+                                        <span className="material-symbols-outlined text-2xl">remove</span>
                                     </button>
                                     <input
                                         type="number"
                                         value={amount}
                                         onChange={(e) => setAmount(e.target.value)}
                                         placeholder="Qtd..."
-                                        className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-2xl px-3 text-lg font-black text-primary outline-none focus:border-primary/50 text-center"
+                                        className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-xl h-12 px-2 text-lg font-black text-primary outline-none focus:border-primary/50 text-center"
                                     />
                                     <button
                                         onClick={() => updateBCOINS('gift')}
                                         disabled={isUpdating}
-                                        className="w-14 h-14 bg-green-500/10 border border-green-500/20 text-green-500 rounded-2xl flex items-center justify-center active:scale-95 transition-all flex-shrink-0"
+                                        className="size-12 bg-green-500/10 border border-green-500/20 text-green-500 rounded-xl flex items-center justify-center active:scale-95 transition-all flex-shrink-0"
                                     >
-                                        <span className="material-symbols-outlined text-3xl">add</span>
+                                        <span className="material-symbols-outlined text-2xl">add</span>
                                     </button>
                                 </div>
                             </div>
