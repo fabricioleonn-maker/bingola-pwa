@@ -225,16 +225,16 @@ export const PlayerManagementScreen: React.FC<Props> = ({ onBack }) => {
                                     <button
                                         onClick={() => updateBCOINS('withdraw')}
                                         disabled={isUpdating}
-                                        className="w-14 h-14 bg-red-500/10 border border-red-500/20 text-red-500 rounded-2xl flex items-center justify-center active:scale-95 transition-all"
+                                        className="w-14 h-14 bg-red-500/10 border border-red-500/20 text-red-500 rounded-2xl flex items-center justify-center active:scale-95 transition-all flex-shrink-0"
                                     >
-                                        <span className="material-symbols-outlined font-black text-3xl">remove</span>
+                                        <span className="material-symbols-outlined text-3xl">remove</span>
                                     </button>
                                     <button
                                         onClick={() => updateBCOINS('gift')}
                                         disabled={isUpdating}
-                                        className="w-14 h-14 bg-green-500/10 border border-green-500/20 text-green-500 rounded-2xl flex items-center justify-center active:scale-95 transition-all"
+                                        className="w-14 h-14 bg-green-500/10 border border-green-500/20 text-green-500 rounded-2xl flex items-center justify-center active:scale-95 transition-all flex-shrink-0"
                                     >
-                                        <span className="material-symbols-outlined font-black text-3xl">add</span>
+                                        <span className="material-symbols-outlined text-3xl">add</span>
                                     </button>
                                 </div>
                             </div>
