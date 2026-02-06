@@ -214,14 +214,7 @@ export const PlayerManagementScreen: React.FC<Props> = ({ onBack }) => {
                             {/* BCOINS Control */}
                             <div className="space-y-4">
                                 <p className="text-[10px] font-black text-white/20 uppercase tracking-widest px-2">Ajustar BCOINS</p>
-                                <div className="flex gap-2">
-                                    <input
-                                        type="number"
-                                        value={amount}
-                                        onChange={(e) => setAmount(e.target.value)}
-                                        placeholder="Qtd..."
-                                        className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-5 text-lg font-black text-primary outline-none focus:border-primary/50"
-                                    />
+                                <div className="flex gap-2 items-center">
                                     <button
                                         onClick={() => updateBCOINS('withdraw')}
                                         disabled={isUpdating}
@@ -229,6 +222,13 @@ export const PlayerManagementScreen: React.FC<Props> = ({ onBack }) => {
                                     >
                                         <span className="material-symbols-outlined text-3xl">remove</span>
                                     </button>
+                                    <input
+                                        type="number"
+                                        value={amount}
+                                        onChange={(e) => setAmount(e.target.value)}
+                                        placeholder="Qtd..."
+                                        className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-2xl px-3 text-lg font-black text-primary outline-none focus:border-primary/50 text-center"
+                                    />
                                     <button
                                         onClick={() => updateBCOINS('gift')}
                                         disabled={isUpdating}
