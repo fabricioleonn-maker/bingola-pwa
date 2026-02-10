@@ -111,7 +111,7 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
         console.error('Error loading store packages:', err);
         useNotificationStore.getState().show('Erro ao carregar ofertas. Verifique sua conexão.', 'error');
       } finally {
-        clearTimeout(timeoutId);
+        if (timeoutId) clearTimeout(timeoutId);
         setLoadingPackages(false);
       }
     };
@@ -240,7 +240,7 @@ export const StoreScreen: React.FC<Props> = ({ onBack }) => {
         </button>
       </header>
 
-      <main className="flex-1 p-4 space-y-8 pb-20">
+      <main className="flex-1 p-4 space-y-8 pb-[max(100px,calc(5rem+env(safe-area-inset-bottom)))]">
         <section>
           <h3 className="text-[10px] font-black uppercase tracking-widest text-primary mb-4">Seu Saldo Atual</h3>
           <div className="bg-white/5 border border-white/10 rounded-2xl p-6 flex items-center justify-between shadow-xl">

@@ -237,20 +237,23 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
   };
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
+    <div className="flex-1 flex flex-col min-h-0 bg-black">
       <header className="p-4 flex items-center justify-between border-b border-white/5">
         <button onClick={onBack} className="w-10 h-10 flex items-center justify-center bg-white/5 rounded-full active:scale-90 transition-transform">
           <span className="material-symbols-outlined text-white/60">arrow_back</span>
         </button>
-        <h2 className="text-lg font-black italic uppercase tracking-widest text-white/90">Meu Perfil</h2>
-        <div className="w-10" />
+        <h2 className="text-sm font-black uppercase tracking-[0.3em] text-white/40">Meu Perfil</h2>
+        <button onClick={() => supabase.auth.signOut()} className="w-10 h-10 flex items-center justify-center bg-red-500/10 rounded-full active:scale-90 transition-transform">
+          <span className="material-symbols-outlined text-red-500">logout</span>
+        </button>
       </header>
 
-      <main className="flex-1 px-6 pb-32 overflow-y-auto no-scrollbar">
-        <div className="flex flex-col items-center mb-8 mt-4">
+      <main className="flex-1 px-6 pb-40 overflow-y-auto no-scrollbar">
+        {/* Profile Header */}
+        <div className="flex flex-col items-center mb-8 mt-6">
           <div
             onClick={handlePhotoClick}
-            className="w-28 h-28 rounded-full border-4 border-primary p-1 mb-4 relative group cursor-pointer"
+            className="w-32 h-32 rounded-full border-[3px] border-primary p-1 mb-6 relative group cursor-pointer"
           >
             {uploading ? (
               <div className="w-full h-full rounded-full bg-black/40 flex items-center justify-center animate-pulse">
@@ -263,105 +266,140 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
                 <span className="material-symbols-outlined text-4xl text-white/20">person</span>
               </div>
             )}
-            <button onClick={handlePhotoClick} className="absolute bottom-1 right-1 bg-primary text-black rounded-full p-2 hover:scale-110 transition-transform">
+            <div className="absolute bottom-1 right-2 bg-primary text-black rounded-full size-8 flex items-center justify-center shadow-lg">
               <span className="material-symbols-outlined text-sm font-black">photo_camera</span>
-            </button>
-          </div>
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handlePWAFileUpload}
-            className="hidden"
-            accept="image/*"
-          />
-
-          {isEditing ? (
-            <div className="w-full max-w-[280px] space-y-4 flex flex-col items-center">
-              <input
-                type="text"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="Seu Nome Completo"
-                className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-4 text-center font-black uppercase text-xl placeholder:text-white/20 focus:outline-none focus:border-primary"
-              />
-              <div className="flex gap-2 w-full">
-                <button onClick={() => setIsEditing(false)} className="flex-1 py-3 rounded-xl bg-white/10 text-xs font-black uppercase tracking-widest text-white/40">Cancelar</button>
-                <button
-                  onClick={handleUpdateProfile}
-                  disabled={isUpdating}
-                  className="flex-[2] py-3 rounded-xl bg-primary text-black text-xs font-black uppercase tracking-widest shadow-lg shadow-primary/20"
-                >
-                  {isUpdating ? 'Salvando...' : 'Salvar Alteração'}
-                </button>
-              </div>
             </div>
-          ) : (
-            <div className="flex flex-col items-center gap-2">
-              <h1 className="text-3xl font-black uppercase italic tracking-tighter">
-                {profile?.full_name || profile?.username || 'CARREGANDO...'}
+          </div>
+
+          <div className="flex flex-col items-center gap-1">
+            <div className="flex items-center gap-2">
+              <h1 className="text-3xl font-black text-white">
+                @{profile?.username || 'USUÁRIO'}
               </h1>
-              <button onClick={() => setIsEditing(true)} className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 text-[10px] font-black uppercase tracking-widest text-white/40 hover:text-white transition-colors">
-                <span className="material-symbols-outlined text-base">edit</span>
-                Editar Perfil
+              <button onClick={() => setIsEditing(true)} className="text-white/20">
+                <span className="material-symbols-outlined text-lg">edit</span>
               </button>
             </div>
-          )}
+            <p className="text-sm font-medium text-white/20">{profile?.email || 'email@exemplo.com'}</p>
+          </div>
         </div>
 
+        {/* Stats Grid */}
         <div className="grid grid-cols-2 gap-4 mb-8">
-          <div className="bg-white/5 border border-white/10 rounded-3xl p-4 text-center">
-            <span className="material-symbols-outlined text-primary mb-2">stars</span>
-            <p className="text-[10px] font-black uppercase tracking-widest text-white/30">Nível</p>
-            <p className="text-2xl font-black italic">{profile?.level || 1}</p>
-          </div>
-          <div className="bg-white/5 border border-white/10 rounded-3xl p-4 text-center">
-            <span className="material-symbols-outlined text-primary mb-2">payments</span>
-            <p className="text-[10px] font-black uppercase tracking-widest text-white/30">B-Coins</p>
-            <p className="text-2xl font-black italic">{profile?.bcoins || 0}</p>
-          </div>
-        </div>
-
-        <div className="space-y-6">
-          <div className="space-y-4 uppercase">
-            <h3 className="text-[10px] font-black tracking-[0.2em] text-white/20 pl-4">Indicação</h3>
-            <div className="bg-gradient-to-br from-primary/20 to-secondary/20 border border-white/10 rounded-[2.5rem] p-6 space-y-4 shadow-xl">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-black italic text-primary">CÓDIGO DE CONVITE</p>
-                  <p className="text-3xl font-black tracking-widest mt-1 uppercase">{profile?.referral_code || '---'}</p>
-                </div>
-                <button
-                  onClick={shareReferral}
-                  className="size-14 bg-white text-black rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-transform"
-                >
-                  <span className="material-symbols-outlined text-2xl font-black">share</span>
-                </button>
+          <div className="bg-[#0D0D12] border border-white/5 rounded-[2rem] p-6 space-y-3 relative overflow-hidden group active:scale-95 transition-all">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <span className="material-symbols-outlined text-primary text-xl">wallet</span>
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-white/30">Saldo Bcoins</p>
+              <div className="flex items-baseline gap-2 mt-1">
+                <p className="text-2xl font-black text-white">B$ {profile?.bcoins || 0}</p>
+                <button onClick={() => setShowExtrato(true)} className="text-[10px] font-black uppercase text-primary">Extrato</button>
               </div>
-              <p className="text-[10px] font-bold text-white/40 uppercase leading-relaxed pr-8">
-                INDIQUE AMIGOS E GANHE <span className="text-white">500 B-COINS</span> POR CADA CADASTRO REALIZADO.
-              </p>
             </div>
           </div>
 
-          <div className="space-y-4 uppercase">
-            <h3 className="text-[10px] font-black tracking-[0.2em] text-white/20 pl-4">Segurança</h3>
-            <button onClick={() => setShowPasswordModal(true)} className="w-full bg-white/5 border border-white/10 rounded-3xl p-5 flex items-center justify-between group active:scale-[0.98] transition-all">
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center transition-colors">
-                  <span className="material-symbols-outlined text-white/40">lock</span>
-                </div>
-                <div className="text-left">
-                  <p className="text-xs font-black">ALTERAR SENHA</p>
-                  <p className="text-[10px] font-bold text-white/20">PROTEJA SUA CONTA</p>
-                </div>
+          <div className="bg-[#0D0D12] border border-white/5 rounded-[2rem] p-6 space-y-3 relative overflow-hidden group active:scale-95 transition-all">
+            <div className="w-10 h-10 rounded-xl bg-green-500/10 flex items-center justify-center">
+              <span className="material-symbols-outlined text-green-500 text-xl">military_tech</span>
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-white/30">BPoints (Ranking)</p>
+              <p className="text-2xl font-black text-green-500 mt-1">{profile?.bpoints || 0}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Referral Card */}
+        <div className="bg-gradient-to-br from-[#0D0D12] to-primary/10 border border-white/5 rounded-[2.5rem] p-8 space-y-6 shadow-xl mb-12">
+          <div className="space-y-1">
+            <p className="text-[10px] font-black text-primary uppercase tracking-widest">Seu código de indicação</p>
+            <div className="flex items-center justify-between">
+              <p className="text-4xl font-black tracking-widest text-white uppercase italic">{profile?.referral_code || '---'}</p>
+              <div className="flex gap-3">
+                <button onClick={() => copyToClipboard(profile?.referral_code || '', "Código")} className="size-12 bg-white/5 rounded-2xl flex items-center justify-center text-white/60 active:scale-90 transition-transform">
+                  <span className="material-symbols-outlined">content_copy</span>
+                </button>
+                <button onClick={shareReferral} className="size-12 bg-primary text-black rounded-2xl flex items-center justify-center shadow-lg active:scale-90 transition-transform">
+                  <span className="material-symbols-outlined">share</span>
+                </button>
               </div>
-              <span className="material-symbols-outlined text-white/20 group-hover:translate-x-1 transition-transform">chevron_right</span>
-            </button>
+            </div>
+          </div>
+          <p className="text-[11px] font-bold text-white/40 leading-relaxed">
+            Convide amigos e ganhe 10 BCOINS quando eles usarem seu código na primeira compra! Eles ganham 10% de desconto!
+          </p>
+        </div>
+
+        {/* Menu Sections */}
+        <div className="space-y-10 mb-20">
+          <div className="space-y-4">
+            <h3 className="text-[11px] font-black tracking-[0.2em] text-white/20 pl-2 uppercase">Segurança e Dados</h3>
+            <div className="space-y-3">
+              <button
+                onClick={() => setShowPasswordModal(true)}
+                className="w-full bg-[#0D0D12] border border-white/5 rounded-[2rem] p-5 flex items-center justify-between group active:scale-[0.98] transition-all"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="size-12 rounded-2xl bg-blue-500/10 flex items-center justify-center">
+                    <span className="material-symbols-outlined text-blue-500">lock_reset</span>
+                  </div>
+                  <div className="text-left">
+                    <p className="text-sm font-black uppercase text-white">Alterar Senha</p>
+                    <p className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Definir nova senha agora</p>
+                  </div>
+                </div>
+                <span className="material-symbols-outlined text-white/10 group-hover:translate-x-1 transition-transform">chevron_right</span>
+              </button>
+
+              <button
+                onClick={() => onNavigate('customization')}
+                className="w-full bg-[#0D0D12] border border-white/5 rounded-[2rem] p-5 flex items-center justify-between group active:scale-[0.98] transition-all"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="size-12 rounded-2xl bg-purple-500/10 flex items-center justify-center">
+                    <span className="material-symbols-outlined text-purple-500">style</span>
+                  </div>
+                  <div className="text-left">
+                    <p className="text-sm font-black uppercase text-white">Customização</p>
+                    <p className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Estilos de cartela e animações</p>
+                  </div>
+                </div>
+                <span className="material-symbols-outlined text-white/10 group-hover:translate-x-1 transition-transform">chevron_right</span>
+              </button>
+            </div>
           </div>
 
-          <button onClick={() => supabase.auth.signOut()} className="w-full bg-red-500/10 border border-red-500/20 rounded-3xl p-5 text-red-500 font-black uppercase tracking-widest text-xs active:scale-95 transition-all">
-            Sair do Jogo
-          </button>
+          <div className="space-y-4">
+            <h3 className="text-[11px] font-black tracking-[0.2em] text-white/20 pl-2 uppercase">Termos e Legal</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <button className="bg-[#0D0D12] border border-white/5 py-5 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest text-white/40 active:scale-95 transition-all">Privacidade</button>
+              <button className="bg-[#0D0D12] border border-white/5 py-5 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest text-white/40 active:scale-95 transition-all">Termos</button>
+            </div>
+          </div>
+
+          <div className="bg-[#0D0D12] border border-white/5 py-6 rounded-[2rem] flex flex-col items-center gap-1 opacity-50">
+            <p className="text-[9px] font-black uppercase tracking-[0.3em] text-white/40">Bingola Beta - 2026</p>
+            <p className="text-[9px] font-black uppercase tracking-[0.3em] text-white/40">Voke Games - Todos os direitos reservados</p>
+          </div>
+
+          <div className="flex flex-col items-center gap-1 pt-4 pb-10">
+            <button
+              onClick={() => {
+                useNotificationStore.getState().confirm({
+                  title: "Excluir Conta?",
+                  message: "Esta ação é IRREVERSÍVEL. Todos os seus dados, BCoins e BPoints serão permanentemente apagados.",
+                  onConfirm: async () => {
+                    useNotificationStore.getState().show("Contate o suporte para exclusão definitiva.", 'info');
+                  }
+                });
+              }}
+              className="text-red-500/40 font-black text-sm uppercase tracking-widest active:opacity-60 transition-opacity"
+            >
+              Excluir conta
+            </button>
+            <p className="text-[8px] font-black text-white/10 uppercase tracking-[0.2em]">Ação irreversível.</p>
+          </div>
         </div>
       </main>
 
@@ -418,6 +456,35 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
           </main>
         </div>
       )}
+
+      <nav className="fixed bottom-0 left-0 right-0 bg-background-dark/95 backdrop-blur-xl border-t border-white/5 flex items-center justify-around py-4 pb-[max(24px,calc(1.5rem+env(safe-area-inset-bottom)))] px-2 z-50">
+        <button onClick={() => onNavigate('home')} className="flex flex-col items-center gap-1 text-white/40">
+          <span className="material-symbols-outlined">home</span>
+          <span className="text-[10px] font-bold">Início</span>
+        </button>
+        <button onClick={() => onNavigate('ranking')} className="flex flex-col items-center gap-1 text-white/40">
+          <span className="material-symbols-outlined">leaderboard</span>
+          <span className="text-[10px] font-bold">Ranking</span>
+        </button>
+        <button onClick={() => onNavigate('friends')} className="flex flex-col items-center gap-1 text-white/40">
+          <span className="material-symbols-outlined">group</span>
+          <span className="text-[10px] font-bold">Social</span>
+        </button>
+        {useUserStore.getState().isMaster && (
+          <button onClick={() => onNavigate('master_hub')} className="flex flex-col items-center gap-1 text-yellow-500 animate-pulse">
+            <span className="material-symbols-outlined">construction</span>
+            <span className="text-[10px] font-bold">Admin</span>
+          </button>
+        )}
+        <button onClick={() => onNavigate('store')} className="flex flex-col items-center gap-1 text-white/40">
+          <span className="material-symbols-outlined">storefront</span>
+          <span className="text-[10px] font-bold">Loja</span>
+        </button>
+        <button onClick={() => onNavigate('profile')} className="flex flex-col items-center gap-1 text-primary">
+          <span className="material-symbols-outlined fill-1">person</span>
+          <span className="text-[10px] font-bold">Perfil</span>
+        </button>
+      </nav>
     </div>
   );
 };

@@ -5,6 +5,12 @@ let isSpeaking = false;
 let isUnlocked = false;
 
 // iOS Safari requires a user interaction to unlock audio context/speech synthesis
+if (synth) {
+    synth.onvoiceschanged = () => {
+        console.log('[Audio] Voices loaded, count:', synth.getVoices().length);
+    };
+}
+
 export const unlockAudio = () => {
     if (isUnlocked || !synth) return;
 

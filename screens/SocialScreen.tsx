@@ -309,7 +309,7 @@ export const SocialScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
                 )}
             </main>
 
-            <nav className="fixed bottom-0 left-0 right-0 bg-background-dark/90 backdrop-blur-xl border-t border-white/5 flex items-center justify-around py-3 px-6 z-50">
+            <nav className="fixed bottom-0 left-0 right-0 bg-background-dark/90 backdrop-blur-xl border-t border-white/5 flex items-center justify-around py-3 pb-[max(20px,calc(0.75rem+env(safe-area-inset-bottom)))] px-6 z-50">
                 <button onClick={() => onNavigate('home')} className="flex flex-col items-center gap-1 text-white/40">
                     <span className="material-symbols-outlined">home</span>
                     <span className="text-[10px] font-bold">Início</span>
