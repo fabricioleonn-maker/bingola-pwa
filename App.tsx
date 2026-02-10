@@ -127,7 +127,6 @@ const App: React.FC = () => {
       const hashParams = new URLSearchParams(window.location.hash.substring(1));
       const searchParams = new URLSearchParams(window.location.search);
       const isRecovery = hashParams.get('type') === 'recovery' ||
-        hashParams.get('access_token') ||
         searchParams.get('type') === 'recovery';
 
       if (isRecovery) {
@@ -172,7 +171,6 @@ const App: React.FC = () => {
       const hashParams = new URLSearchParams(window.location.hash.substring(1));
       const searchParams = new URLSearchParams(window.location.search);
       const hasRecoveryToken = hashParams.get('type') === 'recovery' ||
-        hashParams.get('access_token') ||
         searchParams.get('type') === 'recovery';
 
       try {
@@ -210,7 +208,6 @@ const App: React.FC = () => {
       const hashParams = new URLSearchParams(window.location.hash.substring(1));
       const searchParams = new URLSearchParams(window.location.search);
       const isRecovery = hashParams.get('type') === 'recovery' ||
-        hashParams.get('access_token') ||
         searchParams.get('type') === 'recovery';
 
       if (isRecovery) {
@@ -228,7 +225,6 @@ const App: React.FC = () => {
       const hashParams = new URLSearchParams(window.location.hash.substring(1));
       const searchParams = new URLSearchParams(window.location.search);
       const isRecovery = hashParams.get('type') === 'recovery' ||
-        hashParams.get('access_token') ||
         searchParams.get('type') === 'recovery' ||
         (event as string) === 'PASSWORD_RECOVERY';
 

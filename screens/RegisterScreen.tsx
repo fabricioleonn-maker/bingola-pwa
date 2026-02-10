@@ -3,6 +3,8 @@ import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAudioStore } from '../state/audioStore';
 import { useNotificationStore } from '../state/notificationStore';
+import { signInWithGoogle, signInWithApple } from '../lib/authService';
+import { Capacitor } from '@capacitor/core';
 
 interface Props {
   onBack: () => void;
@@ -45,10 +47,6 @@ export const RegisterScreen: React.FC<Props> = ({ onBack, onComplete }) => {
 
     setLoading(true);
     try {
-      // 0. Pre-validation: Check duplicates in profiles
-      // Note: This assumes profiles are public read or at least readable for uniqueness checks.
-      // If RLS blocks this, we might need a dedicated RPC or Edge Function, but let's try direct query first.
-
       const { data: existingUsers } = await supabase
         .from('profiles')
         .select('username')
@@ -60,20 +58,10 @@ export const RegisterScreen: React.FC<Props> = ({ onBack, onComplete }) => {
         return;
       }
 
-      // Check email typically handled by Auth, but we can assume if they try to register,
-      // and we want a custom error, we rely on signUp error OR check profiles if we sync email there (we don't sync email to profiles yet, only username/bcoins).
-      // Wait, profiles table likely only has ID, username, bcoins. It might NOT have email.
-      // So checking email duplication via 'profiles' isn't possible unless we store email in profiles.
-      // However, supabase.auth.signUp usually throws "User already registered" error.
-      // If the user says it allows it, maybe they aren't seeing the error.
-      // I will trust standard Auth for email but catch it explicitly.
-
-      // 0b. Check duplicate email (in profiles)
-      // Since Auth might fake success for existing emails, we check our own records.
       const { data: existingEmails } = await supabase
         .from('profiles')
         .select('email')
-        .ilike('email', email); // Use ilike for case-insensitive check
+        .ilike('email', email);
 
       if (existingEmails && existingEmails.length > 0) {
         setError('Este email já está cadastrado.');
@@ -81,7 +69,6 @@ export const RegisterScreen: React.FC<Props> = ({ onBack, onComplete }) => {
         return;
       }
 
-      // 1. Sign up user
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
@@ -110,22 +97,17 @@ export const RegisterScreen: React.FC<Props> = ({ onBack, onComplete }) => {
       }
 
       if (authData.user) {
-        console.log("User registered successfully:", authData.user.id);
-
-        // Check if user already exists (identities is empty when enumeration protection is on)
         if (authData.user.identities && authData.user.identities.length === 0) {
           setError('Este e-mail já está cadastrado. Tente fazer login.');
           setLoading(false);
           return;
         }
-
-        // Profile creation is now automatically handled by the PostgreSQL Trigger 'on_auth_user_created'
       }
 
       const isConfirmationRequired = authData.session === null;
       if (isConfirmationRequired) {
         useNotificationStore.getState().show("Conta criada! Verifique sua caixa de entrada para confirmar seu e-mail.", 'info');
-        onBack(); // Send back to Login instead of proceeding as 'explorer'
+        onBack();
       } else {
         useAudioStore.getState().setGenre('00INTRO');
         useAudioStore.setState({ currentTrackIndex: 1, isPlaying: true });
@@ -138,9 +120,31 @@ export const RegisterScreen: React.FC<Props> = ({ onBack, onComplete }) => {
     }
   };
 
+  const handleSocialLogin = async (provider: 'google' | 'apple') => {
+    if (!termsAccepted) {
+      setError('Aceite os termos para continuar.');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const { error } = provider === 'google' ? await signInWithGoogle() : await signInWithApple();
+      if (error) {
+        setError(error.message);
+        useNotificationStore.getState().show(error.message, 'error');
+      } else if (Capacitor.isNativePlatform()) {
+        onComplete();
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setTimeout(() => setLoading(false), 2000);
+    }
+  };
+
   return (
     <div className="min-h-[100dvh] bg-background-dark text-white font-sans relative overflow-hidden flex flex-col pb-[env(safe-area-inset-bottom)]">
-      {/* Animated Background -->Decorativo */}
+      {/* Background Decorativo */}
       <div className="absolute inset-0 opacity-20 pointer-events-none z-0">
         <div className="absolute top-[5%] left-[10%] w-[50vw] h-[50vw] bg-primary/20 rounded-full blur-[100px]"></div>
         <div className="absolute bottom-[10%] right-[10%] w-[60vw] h-[60vw] bg-secondary/15 rounded-full blur-[120px]"></div>
@@ -164,7 +168,7 @@ export const RegisterScreen: React.FC<Props> = ({ onBack, onComplete }) => {
           <p className="text-white/40 text-sm font-medium">Sua jornada de sorte começa em segundos</p>
         </div>
 
-        <form className="space-y-4 pb-10" onSubmit={handleRegister}>
+        <form className="space-y-4" onSubmit={handleRegister}>
           <div>
             <label className="text-[11px] font-bold uppercase tracking-wider text-white/50 ml-1 mb-2 block">Nome de Usuário</label>
             <div className="relative group">
@@ -231,64 +235,90 @@ export const RegisterScreen: React.FC<Props> = ({ onBack, onComplete }) => {
             </div>
           </div>
 
-          {error && (
-            <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 animate-bounce">
-              <p className="text-red-500 text-[11px] font-bold uppercase tracking-widest text-center">{error}</p>
-            </div>
-          )}
-
-          <div className="flex items-start gap-3 px-2">
+          <div className="flex items-start gap-3 px-2 py-2">
             <div className="relative flex items-center">
               <input
                 type="checkbox"
                 id="terms"
                 checked={termsAccepted}
                 onChange={(e) => setTermsAccepted(e.target.checked)}
-                className="peer h-5 w-5 cursor-pointer appearance-none rounded-md border-2 border-white/20 bg-white/5 transition-all checked:border-primary checked:bg-primary hover:border-white/40"
+                className={`peer h-5 w-5 cursor-pointer appearance-none rounded-md border-2 transition-all checked:bg-primary hover:border-white/40 ${!termsAccepted && error?.includes('Termos') ? 'border-red-500' : 'border-white/20 bg-white/5 checked:border-primary'}`}
               />
               <span className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-white opacity-0 peer-checked:opacity-100">
                 <span className="material-symbols-outlined text-sm font-bold">check</span>
               </span>
             </div>
-            <label htmlFor="terms" className="text-xs text-white/60 cursor-pointer select-none leading-relaxed">
-              Li e concordo com os{' '}
-              <a href="/legal/terms-of-service.html" target="_blank" className="text-primary hover:underline font-bold">Termos de Uso</a>
-              {' '}e a{' '}
-              <a href="/legal/privacy-policy.html" target="_blank" className="text-primary hover:underline font-bold">Política de Privacidade</a>.
+            <label htmlFor="terms" className="text-[11px] text-white/40 cursor-pointer select-none leading-tight font-bold uppercase tracking-wider">
+              Li e concordo com os <a href="/legal/terms-of-service.html" target="_blank" className="text-primary underline">Termos</a> e <a href="/legal/privacy-policy.html" target="_blank" className="text-primary underline">Privacidade</a>
             </label>
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className={`w-full h-[66px] bg-gradient-to-r from-primary to-secondary text-white font-black text-lg rounded-[22px] shadow-xl shadow-primary/20 mt-2 active:scale-[0.98] transition-all flex items-center justify-center gap-2 ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
-          >
-            {loading ? (
-              <div className="w-6 h-6 border-3 border-white/30 border-t-white rounded-full animate-spin"></div>
-            ) : (
-              <>Criar Minha Conta <span className="material-symbols-outlined">arrow_forward</span></>
-            )}
-          </button>
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 animate-pulse">
+              <p className="text-red-500 text-[11px] font-bold uppercase tracking-widest text-center">{error}</p>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-3 mt-2">
+            <button
+              type="submit"
+              disabled={loading || !termsAccepted}
+              className={`w-full h-[66px] bg-gradient-to-r from-primary to-secondary text-white font-black text-lg rounded-[22px] shadow-xl shadow-primary/20 transition-all flex items-center justify-center gap-2 disabled:grayscale disabled:opacity-50`}
+            >
+              {loading ? (
+                <div className="w-6 h-6 border-3 border-white/30 border-t-white rounded-full animate-spin"></div>
+              ) : (
+                <>Criar Minha Conta <span className="material-symbols-outlined">arrow_forward</span></>
+              )}
+            </button>
+
+            <div className="relative w-full my-4">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-white/5"></div>
+              </div>
+              <div className="relative flex justify-center text-[10px]">
+                <span className="px-4 bg-background-dark text-white/30 font-bold uppercase tracking-widest">Ou use Acesso Rápido</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 w-full">
+              <button
+                type="button"
+                disabled={loading || !termsAccepted}
+                onClick={() => handleSocialLogin('google')}
+                className={`flex flex-col items-center justify-center h-[64px] rounded-2xl bg-white text-black hover:bg-gray-100 transition-all active:scale-[0.98] shadow-sm disabled:grayscale disabled:opacity-20`}
+              >
+                <div className="flex items-center">
+                  <svg className="w-5 h-5 mr-3" viewBox="0 0 24 24">
+                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"></path>
+                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"></path>
+                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"></path>
+                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.66l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.47 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"></path>
+                  </svg>
+                  <span className="font-bold text-sm">Google</span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                disabled={loading || !termsAccepted}
+                onClick={() => handleSocialLogin('apple')}
+                className={`flex flex-col items-center justify-center h-[64px] rounded-2xl bg-white/5 border border-white/5 text-white/20 transition-all cursor-not-allowed overflow-hidden group relative disabled:grayscale disabled:opacity-20`}
+              >
+                <div className="flex flex-col items-center justify-center">
+                  <div className="flex items-center">
+                    <svg className="w-5 h-5 mr-3 opacity-20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.844-1.026 1.402-2.441 1.247-3.83-1.183.052-2.61.793-3.461 1.79-.767.883-1.442 2.325-1.261 3.676 1.326.104 2.636-.61 3.475-1.636z" fill="currentColor" />
+                    </svg>
+                    <span className="font-bold text-sm opacity-20">Apple</span>
+                  </div>
+                </div>
+              </button>
+            </div>
+          </div>
         </form>
 
-        <div className="mt-2 text-center space-y-3 pb-12">
-          <div className="flex justify-center gap-4">
-            <a
-              href="/legal/privacy-policy.html"
-              target="_blank"
-              className="text-white/40 text-xs font-medium hover:text-white/70 transition-colors underline"
-            >
-              Privacidade
-            </a>
-            <span className="text-white/20">•</span>
-            <a
-              href="/legal/terms-of-service.html"
-              target="_blank"
-              className="text-white/40 text-xs font-medium hover:text-white/70 transition-colors underline"
-            >
-              Termos de Uso
-            </a>
-          </div>
+        <div className="mt-8 text-center space-y-4 pb-12">
           <p className="text-sm text-white/40 font-medium">
             Já joga com a gente?
             <button

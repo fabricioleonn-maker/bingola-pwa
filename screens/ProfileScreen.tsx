@@ -251,24 +251,26 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
       <main className="flex-1 px-6 pb-40 overflow-y-auto no-scrollbar">
         {/* Profile Header */}
         <div className="flex flex-col items-center mb-8 mt-6">
-          <div
-            onClick={handlePhotoClick}
-            className="w-32 h-32 rounded-full border-[3px] border-primary p-1 mb-6 relative group cursor-pointer"
-          >
-            {uploading ? (
-              <div className="w-full h-full rounded-full bg-black/40 flex items-center justify-center animate-pulse">
-                <div className="size-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-              </div>
-            ) : profile?.avatar_url ? (
-              <img src={profile.avatar_url} className="w-full h-full rounded-full object-cover" alt="Profile" />
+          <div className="relative w-32 h-32 rounded-full bg-white/5 border-2 border-white/10 mb-4 flex items-center justify-center overflow-hidden active:scale-95 transition-transform">
+            {profile?.avatar_url ? (
+              <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
             ) : (
-              <div className="w-full h-full rounded-full bg-white/10 flex items-center justify-center">
-                <span className="material-symbols-outlined text-4xl text-white/20">person</span>
-              </div>
+              <span className="material-symbols-outlined text-white/20 text-6xl">person</span>
             )}
-            <div className="absolute bottom-1 right-2 bg-primary text-black rounded-full size-8 flex items-center justify-center shadow-lg">
-              <span className="material-symbols-outlined text-sm font-black">photo_camera</span>
-            </div>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handlePWAFileUpload}
+              className="hidden"
+              accept="image/*"
+            />
+            <button onClick={handlePhotoClick} className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 hover:opacity-100 transition-opacity cursor-pointer">
+              {uploading ? (
+                <span className="material-symbols-outlined text-white animate-spin">progress_activity</span>
+              ) : (
+                <span className="material-symbols-outlined text-white text-3xl">photo_camera</span>
+              )}
+            </button>
           </div>
 
           <div className="flex flex-col items-center gap-1">
@@ -390,13 +392,30 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
                   title: "Excluir Conta?",
                   message: "Esta ação é IRREVERSÍVEL. Todos os seus dados, BCoins e BPoints serão permanentemente apagados.",
                   onConfirm: async () => {
-                    useNotificationStore.getState().show("Contate o suporte para exclusão definitiva.", 'info');
+                    setIsUpdating(true);
+                    try {
+                      // Chama a função RPC segura para deletar o usuário
+                      const { error } = await supabase.rpc('delete_current_user_data');
+                      if (error) throw error;
+
+                      useNotificationStore.getState().show("Sua conta foi excluída com sucesso.", 'success');
+
+                      // Logout e redirecionamento
+                      await supabase.auth.signOut();
+                      window.location.reload();
+                    } catch (err: any) {
+                      console.error("Erro ao excluir conta:", err);
+                      useNotificationStore.getState().show(err.message || "Erro ao excluir conta", 'error');
+                    } finally {
+                      setIsUpdating(false);
+                    }
                   }
                 });
               }}
-              className="text-red-500/40 font-black text-sm uppercase tracking-widest active:opacity-60 transition-opacity"
+              disabled={isUpdating}
+              className="text-red-500/40 font-black text-sm uppercase tracking-widest active:opacity-60 transition-opacity disabled:opacity-20"
             >
-              Excluir conta
+              {isUpdating ? 'Excluindo...' : 'Excluir conta'}
             </button>
             <p className="text-[8px] font-black text-white/10 uppercase tracking-[0.2em]">Ação irreversível.</p>
           </div>
@@ -477,7 +496,7 @@ export const ProfileScreen: React.FC<Props> = ({ onBack, onNavigate }) => {
           </button>
         )}
         <button onClick={() => onNavigate('store')} className="flex flex-col items-center gap-1 text-white/40">
-          <span className="material-symbols-outlined">storefront</span>
+          <span className="material-symbols-outlined storefront">storefront</span>
           <span className="text-[10px] font-bold">Loja</span>
         </button>
         <button onClick={() => onNavigate('profile')} className="flex flex-col items-center gap-1 text-primary">
